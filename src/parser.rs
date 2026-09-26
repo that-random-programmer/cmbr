@@ -3,7 +3,7 @@ use std::{fmt::Display, rc::Rc};
 use crate::{
     tokenizer::{Token, TokenKind, TokenType},
     treewalker::Type,
-    types::{DiagType, Diagnostic, ErrType, Info, Span},
+    types::{DiagType, Diagnostic, ErrType, Info, Span, WarnType},
 };
 
 #[derive(Debug, Clone)]
@@ -15,6 +15,8 @@ pub struct Parser {
     previous_span: Span,
     pos: usize,
     fp: Rc<str>,
+    warn_queue: Vec<Diagnostic>,
+    failed: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -46,8 +48,8 @@ pub enum ASTNodeType {
     },
     Assign {
         ident: (String, Span),
-        value: Expr
-    }
+        value: Expr,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -115,14 +117,6 @@ impl TryFrom<&TokenType> for UnaryOpType {
 
 #[derive(Debug, Clone)]
 pub struct Block(pub Vec<ASTNode>);
-
-impl Iterator for Parser {
-    type Item = Result<ASTNode, Diagnostic>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        todo!()
-    }
-}
 
 #[derive(Debug, Clone)]
 pub enum Atom {
@@ -262,15 +256,28 @@ const ATOM: [TokenKind; 6] = [
     TokenKind::True,
     TokenKind::Ident,
 ];
-impl Parser {
-    pub fn parse(&mut self) -> Result<Vec<ASTNode>, Diagnostic> {
-        let mut out = Vec::new();
-        while !self.current.is_none() {
-            self.skip_newline();
-            out.push(self.stmnt()?)
+impl Iterator for Parser {
+    type Item = Result<ASTNode, Diagnostic>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(diagnostic) = self.warn_queue.pop() {
+            return Some(Err(diagnostic));
         }
-        Ok(out)
+        if self.failed {
+            return None;
+        }
+        self.skip_newline();
+        if self.current.is_none() {
+            return None;
+        }
+        let out = self.stmnt();
+        if out.is_err() {
+            self.failed = true
+        }
+        Some(out)
     }
+}
+impl Parser {
     fn skip_newline(&mut self) {
         while let Some(t) = &self.current
             && t.token == TokenType::Newline
@@ -361,22 +368,38 @@ impl Parser {
                 }
                 let s = start.merge(self.previous_span.clone());
                 self.newline(s.clone())?;
+                if let Some(ref p) = prompt {
+                    self.warn_queue.push(Diagnostic {
+                        ty: DiagType::Warn(WarnType::InputWithPrompt),
+                        info: vec![
+                            Info::note(
+                                "using INPUT with a prompt is NOT official Cambridge syntax.",
+                            ),
+                            Info::help(format!(
+                                "consider using:\n    OUTPUT {p}\n    INPUT {}\ninstead",
+                                ident.0
+                            )),
+                        ],
+                        span: Some(start.merge(s.clone())),
+                    })
+                }
                 return Ok(ASTNode {
                     ty: ASTNodeType::Input { ident, prompt },
                     span: start.merge(s.clone()),
                 });
             }
-            TokenType::Ident(ident_value) if self.peek_amnt(1).is_some_and(|t| t.token == TokenType::ArrowRL) => {
+            TokenType::Ident(ident_value)
+                if self
+                    .peek_amnt(1)
+                    .is_some_and(|t| t.token == TokenType::ArrowRL) =>
+            {
                 let ident = (ident_value, self.span.clone());
                 self.advance();
                 self.advance();
                 let value = self.expr()?;
                 Ok(ASTNode {
-                    ty: ASTNodeType::Assign {
-                        ident,
-                        value
-                    },
-                    span: start.merge(self.previous_span.clone())
+                    ty: ASTNodeType::Assign { ident, value },
+                    span: start.merge(self.previous_span.clone()),
                 })
             }
             TokenType::Output => {
@@ -418,6 +441,7 @@ impl Parser {
                         )
                     {
                         stmnts.push(self.stmnt()?);
+                        self.skip_newline(); // so that stmnt() doesn't get an EndCase or the next case after it skips newlines
                     }
                     self.skip_newline();
                     cases.push(((condition, span), stmnts))
@@ -629,12 +653,21 @@ impl Parser {
             self.advance();
             return Ok(current);
         } else {
+            let mut i = info.to_vec();
+            if let Some(ref v) = self.current
+                && let TokenType::Ident(ref ident) = v.token
+                && let Some(tys) = ty.str()
+                && ident.to_uppercase() == tys
+            {
+                i.push(Info::help(format!("did you mean to write the keyword token `{ty}`?\nnote that cambridge pseudocode is case senstive, and all keywords are capital")));
+            }
+
             return Err(Diagnostic {
                 ty: DiagType::Err(ErrType::UnexpectedToken {
                     tkn: current.token,
                     expected: Some(vec![*ty]),
                 }),
-                info: info.to_vec(),
+                info: i,
                 span: Some(self.span.clone()),
             });
         }
@@ -663,6 +696,8 @@ impl Parser {
             previous: None,
             pos: 0,
             previous_span: Span::empty(fp),
+            warn_queue: Vec::new(),
+            failed: false,
         }
     }
 }

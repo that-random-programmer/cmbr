@@ -115,6 +115,7 @@ name = "cmbr"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "heck",
  "js-sys",
  "ordered-float",
  "owo-colors",

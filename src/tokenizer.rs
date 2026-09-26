@@ -1,9 +1,10 @@
 use std::{cell::LazyCell, collections::HashMap, fmt::Display, rc::Rc};
 
+use heck::{ToPascalCase, ToUpperCamelCase};
 use ordered_float::NotNan;
 use strum::EnumDiscriminants;
 
-use crate::types::{DiagType, Diagnostic, ErrType, Info, Span};
+use crate::types::{DiagType, Diagnostic, ErrType, Info, Span, WarnType};
 
 #[derive(Debug, Clone, PartialEq, Eq, EnumDiscriminants)]
 #[strum_discriminants(name(TokenKind))]
@@ -57,7 +58,35 @@ impl TokenType {
         self.into()
     }
 }
-
+impl TokenKind {
+    pub fn str(&self) -> Option<&str> {
+        Some(match self {
+            TokenKind::Input => "INPUT",
+            TokenKind::Output => "OUTPUT",
+            TokenKind::Declare => "DECLARE",
+            TokenKind::If => "IF",
+            TokenKind::IntegerType => "INTEGER",
+            TokenKind::RealType => "REAL",
+            TokenKind::CharType => "CHAR",
+            TokenKind::BooleanType => "BOOLEAN",
+            TokenKind::StringType => "STRING",
+            TokenKind::Else => "ELSE",
+            TokenKind::Then => "THEN",
+            TokenKind::Endif => "ENDIF",
+            TokenKind::Modulo => "MOD",
+            TokenKind::IntegerDivide => "DIV",
+            TokenKind::LogicalOr => "OR",
+            TokenKind::LogicalAnd => "AND",
+            TokenKind::LogicalNot => "NOT",
+            TokenKind::CaseOf => "CASE OF",
+            TokenKind::False => "FALSE",
+            TokenKind::True => "TRUE",
+            TokenKind::Otherwise => "OTHERWISE",
+            TokenKind::Endcase => "ENDCASE",
+            _ => None?,
+        })
+    }
+}
 thread_local! {
     static MAP_SINGLE: LazyCell<HashMap<char, TokenType>> = LazyCell::new(|| {
         let mut m = HashMap::new();
@@ -84,7 +113,6 @@ thread_local! {
         m.insert(('I', 'F'), TokenType::If);
         m.insert(('>', '='), TokenType::GTE);
         m.insert(('<', '='), TokenType::LTE);
-        m.insert(('/', '/'), TokenType::IntegerDivide);
         m.insert(('O', 'R'), TokenType::LogicalOr);
         m.insert(('!', '='), TokenType::NotEqualsTo);
 
@@ -172,12 +200,23 @@ pub struct Tokenizer {
     current_char: Option<char>,
     previous_span: Option<Span>,
     content: String,
+    diag_queue: Vec<Diagnostic>,
 }
-
+fn is_all_caps(string: &str) -> bool {
+    for char in string.chars() {
+        if !char.is_uppercase() {
+            return false;
+        }
+    }
+    true
+}
 impl Iterator for Tokenizer {
     type Item = Result<Option<Token>, Diagnostic>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        if let Some(diag) = self.diag_queue.pop() {
+            return Some(Err(diag));
+        }
         while let Some(c) = self.current_char
             && c.is_whitespace()
             && c != '\n'
@@ -193,7 +232,9 @@ impl Iterator for Tokenizer {
 
 impl Tokenizer {
     fn skip_line(&mut self) {
-        while let Some(t) = self.current_char && t != '\n' {
+        while let Some(t) = self.current_char
+            && t != '\n'
+        {
             self.advance();
         }
         self.advance();
@@ -205,10 +246,13 @@ impl Tokenizer {
             return self.tokenize_string().map(|i| Some(i));
         } else if c.is_numeric() {
             return self.tokenize_numeric().map(|n| Some(n));
-        }
-        else if c == '/' && self.peek(1) == Some('/') {
+        } else if c == '/' && self.peek(1) == Some('/') {
+            let span = self.current_span.clone();
             self.skip_line();
-            return Ok(None)
+            return Ok(Some(Token {
+                span,
+                token: TokenType::Newline,
+            }));
         } else if c == '\n' {
             self.advance();
             return Ok(Some(Token {
@@ -404,6 +448,14 @@ impl Tokenizer {
             out.push(c);
             self.advance();
         }
+        
+        if out != out.to_pascal_case() {
+            self.diag_queue.push(Diagnostic {
+                ty: DiagType::Warn(WarnType::UnreccomendedVariableName),
+                info: vec![Info::note("variable names should use UpperCamelCase"), Info::help(format!("a reccomended name would be {}", out.to_upper_camel_case()))],
+                span: Some(start.merge(self.prev_span())),
+            })
+        }
         return Ok(Token {
             span: start.merge(self.prev_span()),
             token: TokenType::Ident(out),
@@ -491,6 +543,7 @@ impl Tokenizer {
                 fp: fp.into(),
             },
             previous_span: None,
+            diag_queue: Vec::new(),
         }
     }
     pub fn advance(&mut self) -> Option<char> {

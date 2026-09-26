@@ -40,12 +40,26 @@
 	};
 
 	function run() {
+		worker.terminate();
+		setupWorker();
 		term.clear();
 		console.log(worker);
 		worker.postMessage({
 			sab,
 			source: editor?.getValue()
 		});
+	}
+	function setupWorker() {
+		worker = new Worker(new URL('../lib/interp-worker.js', import.meta.url), {
+			type: 'module'
+		});
+
+		worker.onmessage = ({ data }) => {
+			if (data.type == 'stdout') {
+				term?.write(data.text);
+				console.log(data);
+			}
+		};
 	}
 	onMount(async () => {
 		const monaco = await import('monaco-editor');
@@ -57,24 +71,13 @@
 			}
 		};
 
-		worker = new Worker(new URL('../lib/interp-worker.js', import.meta.url), {
-			type: 'module'
-		});
-
-		worker.onmessage = ({ data }) => {
-			if (data.type == 'stdout') {
-				term?.write(data.text);
-				console.log(data);
-			}
-		};
-
 		function submitLine(line: string) {
 			const bytes = new TextEncoder().encode(line + '\n');
 			dataBuf.set(bytes);
 			Atomics.store(control, 0, bytes.length);
 			Atomics.notify(control, 0);
 		}
-
+		setupWorker();	
 		const { Terminal } = await import('@xterm/xterm');
 
 		fitAddon = new FitAddon();

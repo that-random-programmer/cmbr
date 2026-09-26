@@ -1,24 +1,20 @@
 use std::{fs::File, io::Read, process::exit};
-
-use crate::{
-    parser::Parser,
-    tokenizer::Tokenizer,
-    treewalker::Treewalker,
-    types::{CLIInterpreterIO, DiagnosticPrinter},
-};
-use clap::Parser as ClapParser;
-use std::path::PathBuf;
 mod parser;
 mod tokenizer;
 mod treewalker;
 mod types;
+use crate::{
+    parser::Parser,
+    tokenizer::Tokenizer,
+    treewalker::Treewalker,
+    types::{CLIInterpreterIO, DiagnosticPrinter, Failure},
+};
+use clap::Parser as ClapParser;
 use owo_colors::OwoColorize;
-
-
+use std::path::PathBuf;
 
 fn main() {
     let cli = Cli::parse();
-
     let mut buf = String::new();
     match File::open(&cli.path) {
         Ok(mut f) => match f.read_to_string(&mut buf) {
@@ -36,7 +32,7 @@ fn main() {
 
     let fp = cli.path.to_string_lossy();
     let tk = Tokenizer::new(buf.clone(), fp.clone());
-    let diag_printer = DiagnosticPrinter::new(buf, CLIInterpreterIO);
+    let diag_printer: DiagnosticPrinter<CLIInterpreterIO> = DiagnosticPrinter::new(buf, CLIInterpreterIO);
     let mut tkns = Vec::new();
     for tkn in tk {
         match tkn {
@@ -47,20 +43,28 @@ fn main() {
             }
             Err(e) => {
                 diag_printer.print_diagnostic(&e);
-                exit(1)
+                if e.is_critical() {
+                    exit(1)
+                }
             }
         }
     }
 
-    let mut psr = Parser::new(tkns, fp);
-    let ast = match psr.parse() {
-        Ok(v) => v,
-        Err(e) => {
-            diag_printer.print_diagnostic(&e);
-            exit(1)
-        }
-    };
+    let psr = Parser::new(tkns, fp);
+    let mut ast = Vec::new();
 
+    for node in psr {
+        match node {
+            Ok(n) => ast.push(n),
+            Err(e) => {
+                diag_printer.print_diagnostic(&e);
+                if e.is_critical() {
+                    exit(1)
+                }
+            }
+        }
+    }
+    println!("{}", "---- running ----".bright_black());
     let mut walker = Treewalker::new(&ast, CLIInterpreterIO);
     if let Err(e) = walker.run() {
         diag_printer.print_diagnostic(&e);

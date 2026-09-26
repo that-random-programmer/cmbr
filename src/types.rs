@@ -1,6 +1,6 @@
 use std::{fmt::Display, rc::Rc};
 
-use owo_colors::OwoColorize;
+use owo_colors::{AnsiColors, OwoColorize};
 
 use crate::{
     tokenizer::{TokenKind, TokenType},
@@ -55,9 +55,14 @@ impl InterpreterIO for CLIInterpreterIO {
 
 impl<I: InterpreterIO> DiagnosticPrinter<I> {
     pub fn print_diagnostic(&self, diag: &impl Failure) {
+        let color = match diag.ty() {
+            FailureType::Error => AnsiColors::Red,
+            FailureType::Warning => AnsiColors::Yellow,
+        };
+
         self.io.println(&format!(
             "{}{}",
-            "error".red().bold(),
+            diag.ty().to_string().color(color).bold(),
             format!(": {}", diag.msg().bold())
         ));
 
@@ -75,6 +80,7 @@ impl<I: InterpreterIO> DiagnosticPrinter<I> {
                 Some(v) => v == span.ln,
                 None => true,
             };
+
             for (ln, i) in self
                 .file_content
                 .lines()
@@ -102,7 +108,7 @@ impl<I: InterpreterIO> DiagnosticPrinter<I> {
                 {
                     self.io.println(&format!(
                         "{}{}{}",
-                        start.red().bold(),
+                        start.color(color).bold(),
                         format!("{:4} | ", i + 1).blue().bold(),
                         ln
                     ));
@@ -118,17 +124,20 @@ impl<I: InterpreterIO> DiagnosticPrinter<I> {
                             "        {} {}{} {}",
                             "|".blue().bold(),
                             " ".repeat(span.col),
-                            "^".repeat(ln.chars().count() - span.col + 1).red().bold(),
+                            "^".repeat(ln.chars().count() - span.col + 1)
+                                .color(color)
+                                .bold(),
                             "from here".purple().bold()
                         ));
                     } else if i == span.ln + 1 {
-                        self.io.println(&format!("        {}", "| ...".blue().bold()))
+                        self.io
+                            .println(&format!("        {}", "| ...".blue().bold()))
                     } else if i == endln {
                         self.io.println(&format!(
                             "        {} {}{} {}",
                             "|".blue().bold(),
                             " ".repeat(span.col),
-                            "^".repeat(endcol).red().bold(),
+                            "^".repeat(endcol).color(color).bold(),
                             "to here".purple().bold()
                         ));
                     }
@@ -138,14 +147,14 @@ impl<I: InterpreterIO> DiagnosticPrinter<I> {
                             "        {} {}{}",
                             "|".blue().bold(),
                             " ".repeat(span.col),
-                            "^".repeat(endcol - span.col + 1).red().bold()
+                            "^".repeat(endcol - span.col + 1).color(color).bold()
                         ))
                     } else {
                         self.io.println(&format!(
                             "        {} {}{}",
                             "|".blue().bold(),
                             " ".repeat(span.col),
-                            "^".red().bold()
+                            "^".color(color).bold()
                         ))
                     }
                 }
@@ -156,9 +165,10 @@ impl<I: InterpreterIO> DiagnosticPrinter<I> {
             self.io.println(&format!(
                 "{}{}",
                 info.ty.bold().blue(),
-                format!(": {}", info.msg)
+                format!(": {}", info.msg.replace("\n", "\n      "))
             ));
         }
+        self.io.println("")
     }
 }
 
@@ -212,7 +222,19 @@ pub enum ErrType {
 }
 
 #[derive(Debug, Clone)]
-pub enum WarnType {}
+pub enum WarnType {
+    InputWithPrompt,
+    UnreccomendedVariableName
+}
+
+impl Display for WarnType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WarnType::InputWithPrompt => write!(f, "input statement with a prompt"),
+            WarnType::UnreccomendedVariableName => write!(f, "unreccomended variable name"),
+        }
+    }
+}
 
 impl Display for ErrType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -248,9 +270,7 @@ impl Display for DiagType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             DiagType::Err(err_type) => write!(f, "{err_type}"),
-            DiagType::Warn(warn_type) => match warn_type {
-                _ => todo!(),
-            },
+            DiagType::Warn(warn_type) => write!(f, "{warn_type}"),
         }
     }
 }
@@ -266,12 +286,33 @@ pub trait InterpreterIO {
 #[derive(Debug, Clone)]
 pub enum DiagType {
     Err(ErrType),
-    Warn(WarnType), // TODO: warnings via iterator
+    Warn(WarnType),
+}
+
+#[derive(Clone, Debug, Copy)]
+pub enum FailureType {
+    Error,
+    Warning,
+}
+impl Display for FailureType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FailureType::Error => write!(f, "error"),
+            FailureType::Warning => write!(f, "warning"),
+        }
+    }
 }
 pub trait Failure {
     fn span(&self) -> Option<&Span>;
     fn msg(&self) -> String;
     fn info(&self) -> &Vec<Info>;
+    fn ty(&self) -> FailureType;
+    fn is_critical(&self) -> bool {
+        match self.ty() {
+            FailureType::Error => true,
+            FailureType::Warning => false,
+        }
+    }
 }
 
 impl Failure for RuntimeError {
@@ -286,6 +327,10 @@ impl Failure for RuntimeError {
     fn info(&self) -> &Vec<Info> {
         &self.info
     }
+
+    fn ty(&self) -> FailureType {
+        FailureType::Error
+    }
 }
 
 impl Failure for Diagnostic {
@@ -299,6 +344,13 @@ impl Failure for Diagnostic {
 
     fn info(&self) -> &Vec<Info> {
         &self.info
+    }
+
+    fn ty(&self) -> FailureType {
+        match self.ty {
+            DiagType::Err(_) => FailureType::Error,
+            DiagType::Warn(_) => FailureType::Warning,
+        }
     }
 }
 impl Display for Span {
@@ -337,7 +389,6 @@ pub struct Diagnostic {
     pub info: Vec<Info>,
     pub span: Option<Span>,
 }
-
 #[derive(Debug, Clone)]
 pub struct Info {
     pub msg: String,

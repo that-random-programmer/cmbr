@@ -3,7 +3,8 @@ use std::{collections::HashMap, fmt::Display, io::Write};
 use ordered_float::NotNan;
 
 use crate::{
-    parser::{ASTNode, ASTNodeType, Atom, BinOpType, Expr, ExprType, UnaryOpType}, types::{Info, InterpreterIO, Span},
+    parser::{ASTNode, ASTNodeType, Atom, BinOpType, Expr, ExprType, UnaryOpType},
+    types::{Info, InterpreterIO, Span},
 };
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
@@ -56,7 +57,7 @@ pub struct Variable {
 pub struct Treewalker<I: InterpreterIO> {
     nodes: Vec<ASTNode>,
     variables: HashMap<String, Variable>,
-    io: I
+    io: I,
 }
 #[derive(Debug, Clone, Copy)]
 pub enum RuntimeErrorType {
@@ -64,7 +65,7 @@ pub enum RuntimeErrorType {
     ReferenceError,
     DivideByZeroError,
     IOError,
-    InternalError
+    InternalError,
 }
 impl Display for RuntimeErrorType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -287,7 +288,7 @@ impl<I: InterpreterIO> Treewalker<I> {
         Self {
             nodes: nodes.to_vec(),
             variables: HashMap::new(),
-            io
+            io,
         }
     }
 
@@ -396,7 +397,7 @@ impl<I: InterpreterIO> Treewalker<I> {
                         })?,
                         v.span,
                     )?,
-                    None => format!("enter value for variable {ident}: "),
+                    None => format!("input> "),
                 };
                 self.io.print(&p);
                 std::io::stdout().flush().unwrap();

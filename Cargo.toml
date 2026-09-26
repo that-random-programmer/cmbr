@@ -5,7 +5,9 @@ edition = "2024"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
-
+[[bin]]
+name = "cmbr"
+path = "src/main.rs"
 [features]
 wasm = ["dep:wasm-bindgen", "dep:js-sys"]
 
@@ -16,3 +18,4 @@ owo-colors = "4.4.0"
 strum = { version = "0.28.0", features = ["derive"] }
 wasm-bindgen = { version = "0.2", optional = true }
 js-sys = { version = "0.3", optional = true }
+heck = "0.5.0"
