@@ -50,6 +50,7 @@ jobs:
           version: 11
           runtime: node@22
           cache: true
+          cache_dependency_path: "web/pnpm-lock.yaml"
       - name: Build
         run: bash build-web.sh
       - name: Setup Pages
