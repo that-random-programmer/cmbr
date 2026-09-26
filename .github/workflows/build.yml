@@ -24,6 +24,9 @@ jobs:
       - name: Run tests
         run: cargo test --release --verbose
 
+      - name: Build
+        run: cargo build --release --verbose
+
       - name: Rename Windows binary
         shell: bash
         run: mv target/release/cmbr.exe target/release/cmbr-windows-latest-x86_64.exe
@@ -46,6 +49,7 @@ jobs:
           name: release-bins
           path: target/release/cmbr-${{ matrix.os }}-x86_64
           if-no-files-found: error  
+    
   create-draft-release:
     name: Create Draft Release
     needs: build
