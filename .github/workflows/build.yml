@@ -1,0 +1,41 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - 'release/**'
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release --verbose
+
+      - name: Upload Windows binary
+        uses: actions/upload-artifact@v4
+        if: matrix.os == 'windows-latest'
+        with:
+          name: ${{ matrix.os }}-x86_64-binary
+          path: target/release/cmbr.exe
+          if-no-files-found: error
+
+      - name: Upload UNIX binary
+        uses: actions/upload-artifact@v4
+        if: matrix.os != 'windows-latest'
+        with:
+          name: ${{ matrix.os }}-x86_64-binary
+          path: target/release/cmbr
+          if-no-files-found: error
