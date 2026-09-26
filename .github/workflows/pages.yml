@@ -40,9 +40,16 @@ jobs:
 
       - name: add the wasm target
         run: rustup target add wasm32-unknown-unknown
-        
+
       - name: install wasm-pack
         run: cargo install wasm-pack
+
+      - name: Install pnpm and Node.js
+        uses: pnpm/setup@v2
+        with:
+          version: 11
+          runtime: node@22
+          cache: true
       - name: Build
         run: bash build-web.sh
       - name: Setup Pages
@@ -50,7 +57,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: './web/build'
+          path: "./web/build"
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
