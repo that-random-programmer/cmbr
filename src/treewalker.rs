@@ -383,7 +383,7 @@ impl Treewalker {
                 let span = ident.1;
                 let ident = ident.0;
                 self.var_ty(&ident, span.clone())?; // just to check that it exists before asking the prompt
-                match prompt {
+                let p = match prompt {
                     Some(v) => as_str(
                         self.exec_node(ASTNode {
                             ty: ASTNodeType::Expr(v.clone()),
@@ -393,7 +393,7 @@ impl Treewalker {
                     )?,
                     None => format!("enter value for variable {ident}: "),
                 };
-
+                print!("{p}");
                 std::io::stdout().flush().unwrap();
                 let mut buf = String::new();
                 std::io::stdin().read_line(&mut buf).unwrap();
