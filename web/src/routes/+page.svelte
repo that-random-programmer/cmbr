@@ -8,13 +8,36 @@
 	let resizeObserver: ResizeObserver;
 	let editorEl: HTMLDivElement;
 	let editor: import('monaco-editor').editor.IStandaloneCodeEditor;
-	
+
 	const CONTROL_BYTES = 4;
 	const DATA_BYTES = 1024;
 	const sab = new SharedArrayBuffer(CONTROL_BYTES + DATA_BYTES);
 	const control = new Int32Array(sab, 0, 1);
 	const dataBuf = new Uint8Array(sab, 4);
 	let worker: Worker;
+	const dark2026Theme = {
+		background: '#181818',
+		foreground: '#cccccc',
+		cursor: '#cccccc',
+		cursorAccent: '#181818',
+		selectionBackground: '#264f78',
+		black: '#000000',
+		red: '#cd3131',
+		green: '#0dbc79',
+		yellow: '#e5e510',
+		blue: '#2472c8',
+		magenta: '#bc3fbc',
+		cyan: '#11a8cd',
+		white: '#e5e5e5',
+		brightBlack: '#666666',
+		brightRed: '#f14c4c',
+		brightGreen: '#23d18b',
+		brightYellow: '#f5f543',
+		brightBlue: '#3b8eea',
+		brightMagenta: '#d670d6',
+		brightCyan: '#29b8db',
+		brightWhite: '#e5e5e5'
+	};
 
 	function run() {
 		term.clear();
@@ -55,7 +78,9 @@
 		const { Terminal } = await import('@xterm/xterm');
 
 		fitAddon = new FitAddon();
-		term = new Terminal();
+		term = new Terminal({
+			theme: dark2026Theme
+		});
 		term.loadAddon(fitAddon);
 		term.open(terminalEl);
 		fitAddon.fit();
@@ -70,6 +95,7 @@
 			theme: 'vs-dark',
 			automaticLayout: true
 		});
+		console.log(term);
 		term.onData((data) => {
 			// basically set it into cooked mode
 			if (data === '\r') {
