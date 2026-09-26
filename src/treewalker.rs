@@ -3,8 +3,7 @@ use std::{collections::HashMap, fmt::Display, io::Write};
 use ordered_float::NotNan;
 
 use crate::{
-    parser::{ASTNode, ASTNodeType, Atom, BinOpType, Expr, ExprType, UnaryOpType},
-    types::{Info, Span},
+    parser::{ASTNode, ASTNodeType, Atom, BinOpType, Expr, ExprType, UnaryOpType}, types::{Info, InterpreterIO, Span},
 };
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
@@ -54,15 +53,18 @@ pub struct Variable {
     declared_ty: Type,
     value: Option<Value>,
 }
-pub struct Treewalker {
+pub struct Treewalker<I: InterpreterIO> {
     nodes: Vec<ASTNode>,
     variables: HashMap<String, Variable>,
+    io: I
 }
 #[derive(Debug, Clone, Copy)]
 pub enum RuntimeErrorType {
     TypeError,
     ReferenceError,
     DivideByZeroError,
+    IOError,
+    InternalError
 }
 impl Display for RuntimeErrorType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -70,6 +72,8 @@ impl Display for RuntimeErrorType {
             RuntimeErrorType::TypeError => write!(f, "type error"),
             RuntimeErrorType::ReferenceError => write!(f, "reference error"),
             RuntimeErrorType::DivideByZeroError => write!(f, "divide by zero error"),
+            RuntimeErrorType::IOError => write!(f, "io error"),
+            RuntimeErrorType::InternalError => write!(f, "!! INTERNAL ERROR !!"),
         }
     }
 }
@@ -271,7 +275,7 @@ fn eq(node: &Value, operand: &Value) -> Result<bool, RuntimeError> {
         _ => Ok(node == operand),
     }
 }
-impl Treewalker {
+impl<I: InterpreterIO> Treewalker<I> {
     pub fn run(&mut self) -> Result<(), RuntimeError> {
         for node in self.nodes.clone() {
             // TODO: perhaps figure out how to not clone all the nodes
@@ -279,10 +283,11 @@ impl Treewalker {
         }
         Ok(())
     }
-    pub fn new(nodes: &[ASTNode]) -> Self {
+    pub fn new(nodes: &[ASTNode], io: I) -> Self {
         Self {
             nodes: nodes.to_vec(),
             variables: HashMap::new(),
+            io
         }
     }
 
@@ -393,10 +398,9 @@ impl Treewalker {
                     )?,
                     None => format!("enter value for variable {ident}: "),
                 };
-                print!("{p}");
+                self.io.print(&p);
                 std::io::stdout().flush().unwrap();
-                let mut buf = String::new();
-                std::io::stdin().read_line(&mut buf).unwrap();
+                let mut buf = self.io.read_line(astnode.span.clone())?;
                 if buf.ends_with('\n') {
                     buf.pop();
                     if buf.ends_with('\r') {
@@ -744,7 +748,7 @@ impl Treewalker {
                         span: expr.span,
                     })?))
                 }
-                println!("{}", out.join(" "));
+                self.io.print(&format!("{}\n", out.join(" ")));
                 Ok(Value::Null)
             }
             ASTNodeType::Declare {

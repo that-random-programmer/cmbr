@@ -1,8 +1,10 @@
 use std::{fmt::Display, rc::Rc};
 
+use owo_colors::OwoColorize;
+
 use crate::{
     tokenizer::{TokenKind, TokenType},
-    treewalker::RuntimeError,
+    treewalker::{RuntimeError, RuntimeErrorType},
 };
 #[derive(Debug, Clone)]
 pub struct Span {
@@ -13,6 +15,151 @@ pub struct Span {
     pub endcol: Option<usize>,
     pub endpos: Option<usize>,
     pub fp: Rc<str>,
+}
+
+pub struct DiagnosticPrinter<I: InterpreterIO> {
+    file_content: Rc<str>,
+    io: I,
+}
+
+impl<I: InterpreterIO> DiagnosticPrinter<I> {
+    pub fn new(file_content: impl Into<Rc<str>>, io: I) -> Self {
+        Self {
+            file_content: file_content.into(),
+            io,
+        }
+    }
+}
+
+pub struct CLIInterpreterIO;
+impl InterpreterIO for CLIInterpreterIO {
+    fn print(&self, s: &str) {
+        print!("{s}");
+    }
+
+    fn read_line(&self, span: Span) -> Result<String, RuntimeError> {
+        let mut buf = String::new();
+        match std::io::stdin().read_line(&mut buf) {
+            Ok(_) => Ok(buf),
+            Err(e) => Err(RuntimeError {
+                msg: format!("failed to read from stdin: {e}"),
+                span: span,
+                ty: RuntimeErrorType::IOError,
+                info: vec![Info::note(
+                    "this error is not caused by something wrong with your program",
+                )],
+            }),
+        }
+    }
+}
+
+impl<I: InterpreterIO> DiagnosticPrinter<I> {
+    pub fn print_diagnostic(&self, diag: &impl Failure) {
+        self.io.println(&format!(
+            "{}{}",
+            "error".red().bold(),
+            format!(": {}", diag.msg().bold())
+        ));
+
+        if let Some(span) = &diag.span() {
+            self.io.println(&format!("at {span}"));
+            let start = span.ln.saturating_sub(3);
+            let end = match span.endln {
+                Some(v) => v + 3,
+                None => span.ln + 3,
+            }
+            .clamp(0, self.file_content.lines().count());
+            let line_count = end - start;
+            let mut arrow_drawn = false;
+            let no_endln = match span.endln {
+                Some(v) => v == span.ln,
+                None => true,
+            };
+            for (ln, i) in self
+                .file_content
+                .lines()
+                .skip(start)
+                .take(line_count)
+                .zip(start..end)
+            {
+                let start;
+                if let Some(endln) = span.endln
+                    && !no_endln
+                    && span.ln < i
+                    && i <= endln
+                    && !arrow_drawn
+                {
+                    start = "-> ";
+                    arrow_drawn = true;
+                } else if span.ln == i {
+                    start = "-> ";
+                    arrow_drawn = true;
+                } else {
+                    start = "   "
+                }
+                if span.endln.is_none()
+                    || span.endln.is_some_and(|endln| !(endln > i && i > span.ln))
+                {
+                    self.io.println(&format!(
+                        "{}{}{}",
+                        start.red().bold(),
+                        format!("{:4} | ", i + 1).blue().bold(),
+                        ln
+                    ));
+                }
+                if let Some(endln) = span.endln
+                    && span.ln <= i
+                    && i <= endln
+                    && let Some(endcol) = span.endcol
+                    && !no_endln
+                {
+                    if i == span.ln {
+                        self.io.println(&format!(
+                            "        {} {}{} {}",
+                            "|".blue().bold(),
+                            " ".repeat(span.col),
+                            "^".repeat(ln.chars().count() - span.col + 1).red().bold(),
+                            "from here".purple().bold()
+                        ));
+                    } else if i == span.ln + 1 {
+                        self.io.println(&format!("        {}", "| ...".blue().bold()))
+                    } else if i == endln {
+                        self.io.println(&format!(
+                            "        {} {}{} {}",
+                            "|".blue().bold(),
+                            " ".repeat(span.col),
+                            "^".repeat(endcol).red().bold(),
+                            "to here".purple().bold()
+                        ));
+                    }
+                } else if span.ln == i && no_endln {
+                    if let Some(endcol) = span.endcol {
+                        self.io.println(&format!(
+                            "        {} {}{}",
+                            "|".blue().bold(),
+                            " ".repeat(span.col),
+                            "^".repeat(endcol - span.col + 1).red().bold()
+                        ))
+                    } else {
+                        self.io.println(&format!(
+                            "        {} {}{}",
+                            "|".blue().bold(),
+                            " ".repeat(span.col),
+                            "^".red().bold()
+                        ))
+                    }
+                }
+            }
+            self.io.println("")
+        }
+        for info in diag.info() {
+            self.io.println(&format!(
+                "{}{}",
+                info.ty.bold().blue(),
+                format!(": {}", info.msg)
+            ));
+        }
+    }
 }
 
 impl Span {
@@ -108,6 +255,13 @@ impl Display for DiagType {
     }
 }
 
+pub trait InterpreterIO {
+    fn read_line(&self, span: Span) -> Result<String, RuntimeError>;
+    fn println(&self, s: &str) {
+        self.print(&format!("{s}\n"));
+    }
+    fn print(&self, s: &str);
+}
 
 #[derive(Debug, Clone)]
 pub enum DiagType {
