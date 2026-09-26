@@ -37,12 +37,15 @@ jobs:
 
       - name: Cache cargo registry
         uses: Swatinem/rust-cache@v2
+      
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall-action@v1.10.2
 
       - name: add the wasm target
         run: rustup target add wasm32-unknown-unknown
 
       - name: install wasm-pack
-        run: cargo install wasm-pack
+        run: cargo binstall --no-confirm wasm-pack
 
       - name: Install pnpm and Node.js
         uses: pnpm/setup@v2
@@ -50,7 +53,7 @@ jobs:
           version: 11
           runtime: node@22
           cache: true
-          cache_dependency_path: "web/pnpm-lock.yaml"
+          cache-dependency-path: "web/pnpm-lock.yaml"
       - name: Build
         run: bash build-web.sh
       - name: Setup Pages
