@@ -6,7 +6,7 @@ use crate::{
     parser::Parser,
     tokenizer::Tokenizer,
     treewalker::{RuntimeError, RuntimeErrorType, Treewalker},
-    types::{DiagnosticPrinter, Info, InterpreterIO, Span},
+    types::{DiagnosticPrinter, Failure, Info, InterpreterIO, Span},
 };
 
 #[wasm_bindgen]
@@ -34,22 +34,34 @@ fn work(source: &str, io: WasmIO) {
             }
             Err(e) => {
                 diag_printer.print_diagnostic(&e);
-                return;
+                if e.is_critical() {
+                    return;
+                }
             }
         }
     }
-    let mut psr = Parser::new(tkns, "<editor>");
-    let parsed = match psr.parse() {
-        Ok(v) => v,
-        Err(e) => {
-            diag_printer.print_diagnostic(&e);
-            return;
+    let psr = Parser::new(tkns, "<editor>");
+    let mut nodes = Vec::new();
+    for node in psr {
+        match node {
+            Ok(n) => nodes.push(n),
+            Err(e) => {
+                diag_printer.print_diagnostic(&e);
+                if e.is_critical() {
+                    return;
+                }
+            }
         }
-    };
-    let mut treewalker = Treewalker::new(&parsed, io);
+    }
+
+    io.println(&format!("{}", "---- running ----".bright_black()));
+
+    let mut treewalker = Treewalker::new(&nodes, io);
     if let Err(e) = treewalker.run() {
         diag_printer.print_diagnostic(&e);
-        return;
+        if e.is_critical() {
+            return;
+        }
     };
 }
 
