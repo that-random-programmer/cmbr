@@ -66,7 +66,7 @@ jobs:
       - name: Download all binaries
         uses: actions/download-artifact@v4
         with:
-          name: release-binaries
+          name: release-bins
           path: release-assets/
 
       - name: Create Draft GitHub Release
