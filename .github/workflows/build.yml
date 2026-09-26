@@ -21,7 +21,7 @@ jobs:
       - name: Cache cargo registry and build
         uses: Swatinem/rust-cache@v2
 
-      - name: Build release binary
+      - name: Run tests
         run: cargo build --release --verbose
 
       - name: Upload Windows binary
