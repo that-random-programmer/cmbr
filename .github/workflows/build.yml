@@ -21,21 +21,53 @@ jobs:
       - name: Cache cargo registry and build
         uses: Swatinem/rust-cache@v2
 
-      - name: Build release binary
-        run: cargo build --release --verbose
+      - name: Run tests
+        run: cargo test --release --verbose
+
+      - name: Rename Windows binary
+        shell: bash
+        if: matrix.os == 'windows-latest'
+        run: mv target/release/cmbr.exe target/release/cmbr-windows-latest-x86_64.exe
+        
+      - name: Rename UNIX binary
+        if: matrix.os != 'windows-latest'
+        run: mv target/release/cmbr target/release/cmbr-${{ matrix.os }}-x86_64
 
       - name: Upload Windows binary
         uses: actions/upload-artifact@v4
         if: matrix.os == 'windows-latest'
         with:
-          name: ${{ matrix.os }}-x86_64-binary
-          path: target/release/cmbr.exe
+          name: release-bins-${{ matrix.os }}
+          path: target/release/cmbr-windows-latest-x86_64.exe
           if-no-files-found: error
 
       - name: Upload UNIX binary
         uses: actions/upload-artifact@v4
         if: matrix.os != 'windows-latest'
         with:
-          name: ${{ matrix.os }}-x86_64-binary
-          path: target/release/cmbr
-          if-no-files-found: error
+          name: release-bins-${{ matrix.os }}
+          path: target/release/cmbr-${{ matrix.os }}-x86_64
+          if-no-files-found: error  
+  create-draft-release:
+    name: Create Draft Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write 
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      
+      - name: Download all binaries
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets/
+          merge-multiple: true
+      - name: Create Draft GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: release-assets/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
