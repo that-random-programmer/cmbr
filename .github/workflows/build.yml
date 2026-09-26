@@ -29,9 +29,11 @@ jobs:
 
       - name: Rename Windows binary
         shell: bash
+        if: matrix.os == 'windows-latest'
         run: mv target/release/cmbr.exe target/release/cmbr-windows-latest-x86_64.exe
         
       - name: Rename UNIX binary
+        if: matrix.os != 'windows-latest'
         run: mv target/release/cmbr.exe target/release/cmbr-${{ matrix.os }}-x86_64.exe
 
       - name: Upload Windows binary
