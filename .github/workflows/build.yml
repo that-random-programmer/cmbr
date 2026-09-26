@@ -40,7 +40,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: matrix.os == 'windows-latest'
         with:
-          name: release-bins
+          name: release-bins-${{ matrix.os }}
           path: target/release/cmbr-windows-latest-x86_64.exe
           if-no-files-found: error
 
@@ -48,7 +48,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: matrix.os != 'windows-latest'
         with:
-          name: release-bins
+          name: release-bins-${{ matrix.os }}
           path: target/release/cmbr-${{ matrix.os }}-x86_64
           if-no-files-found: error  
     
@@ -66,7 +66,6 @@ jobs:
       - name: Download all binaries
         uses: actions/download-artifact@v4
         with:
-          patter: release-bins-*
           path: release-assets/
           merge-multiple: true
       - name: Create Draft GitHub Release
