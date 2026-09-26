@@ -26,6 +26,14 @@ jobs:
 
       - name: Build
         run: cargo build --release --verbose
+      - name: Rename UNIX binary
+        run: mv target/release/cmbr target/release/cmbr-${{ matrix.os }}-x86_64
+        if: matrix.os != 'windows-latest'
+
+      - name: Rename Windows binary
+        shell: powershell
+        run: mv target/release/cmbr.exe target/release/cmbr-windows-latest-x86_64.exe
+        if: matrix.os == 'windows-latest'
 
       - name: Upload Windows binary
         uses: actions/upload-artifact@v4
