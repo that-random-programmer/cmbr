@@ -31,6 +31,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: Swatinem/rust-cache@v2
+
+      - name: add the wasm target
+        run: rustup target add wasm32-unknown-unknown
+        
+      - name: install wasm-pack
+        run: cargo install wasm-pack
       - name: Build
         run: bash build-web.sh
       - name: Setup Pages
