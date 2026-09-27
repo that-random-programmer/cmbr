@@ -451,8 +451,8 @@ impl Tokenizer {
         
         if out != out.to_pascal_case() {
             self.diag_queue.push(Diagnostic {
-                ty: DiagType::Warn(WarnType::UnreccomendedVariableName),
-                info: vec![Info::note("variable names should use UpperCamelCase"), Info::help(format!("a reccomended name would be {}", out.to_upper_camel_case()))],
+                ty: DiagType::Warn(WarnType::UnrecommendedVariableName),
+                info: vec![Info::note("variable names should use UpperCamelCase"), Info::help(format!("a recommended name would be {}", out.to_upper_camel_case()))],
                 span: Some(start.merge(self.prev_span())),
             })
         }
