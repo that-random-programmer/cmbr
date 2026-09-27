@@ -1,9 +1,5 @@
 use std::{fs::File, io::Read, process::exit};
-mod parser;
-mod tokenizer;
-mod treewalker;
-mod types;
-use crate::{
+use cmbr::{
     parser::Parser,
     tokenizer::Tokenizer,
     treewalker::Treewalker,

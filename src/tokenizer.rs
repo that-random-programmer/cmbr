@@ -203,14 +203,7 @@ pub struct Tokenizer {
     diag_queue: Vec<Diagnostic>,
     warned_vars: Vec<String>,
 }
-fn is_all_caps(string: &str) -> bool {
-    for char in string.chars() {
-        if !char.is_uppercase() {
-            return false;
-        }
-    }
-    true
-}
+
 impl Iterator for Tokenizer {
     type Item = Result<Option<Token>, Diagnostic>;
 

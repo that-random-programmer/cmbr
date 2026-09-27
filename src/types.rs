@@ -75,7 +75,6 @@ impl<I: InterpreterIO> DiagnosticPrinter<I> {
             }
             .clamp(0, self.file_content.lines().count());
             let line_count = end - start;
-            let mut arrow_drawn = false;
             let no_endln = match span.endln {
                 Some(v) => v == span.ln,
                 None => true,
