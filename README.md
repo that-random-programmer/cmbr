@@ -16,9 +16,3 @@ Right now, the basics have been implemented:
 
 - an obvious abbreviation of "CaMBRidge", when it works
 - Completely Maddening Bad Ragebait, when you want to be funny (who, me?) by referencing Linus Torvalds, and it doesn't work
-
-Roadmap (will move to GitHub Milestones when I stop feeling lazy):
-
-1. a web version with WASM
-2. automatic(ish) declarations, which will ask you the type of each variable if not declared (useful for syllabuses where `DECLARE` hasn't been introduced)
-3. everything defined in Cambridge Pseudocode
