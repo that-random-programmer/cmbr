@@ -424,6 +424,7 @@ impl Parser {
             TokenType::CaseOf => {
                 self.advance();
                 let value = self.expr()?;
+                self.eat(&TokenKind::Newline)?;
                 self.skip_newline();
                 let mut cases = Vec::new();
                 let mut otherwise = None;
@@ -457,6 +458,7 @@ impl Parser {
                     otherwise = Some(stmnts)
                 }
                 self.eat(&TokenKind::Endcase)?;
+                self.newline(start.merge(self.span.clone()))?;
                 Ok(ASTNode {
                     ty: ASTNodeType::Case {
                         value,

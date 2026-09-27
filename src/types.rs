@@ -92,24 +92,29 @@ impl<I: InterpreterIO> DiagnosticPrinter<I> {
                 if let Some(endln) = span.endln
                     && !no_endln
                     && span.ln < i
-                    && i <= endln
-                    && !arrow_drawn
+                    && i < endln
                 {
-                    start = "-> ";
-                    arrow_drawn = true;
+                    start = "|  ";
+                } else if let Some(endln) = span.endln
+                    && !no_endln
+                    && (i == span.ln || i == endln)
+                {
+                    start = "+--"
                 } else if span.ln == i {
                     start = "-> ";
-                    arrow_drawn = true;
                 } else {
                     start = "   "
                 }
                 if span.endln.is_none()
-                    || span.endln.is_some_and(|endln| !(endln > i && i > span.ln))
+                    || span.endln.is_some_and(|endln| {
+                        !(endln > i && i > span.ln)
+                            || (span.ln < i && i < endln && matches!(endln - span.ln, 2..=3))
+                    })
                 {
                     self.io.println(&format!(
                         "{}{}{}",
                         start.color(color).bold(),
-                        format!("{:4} | ", i + 1).blue().bold(),
+                        format!("{}{:4} | ", "", i + 1).blue().bold(),
                         ln
                     ));
                 }
@@ -121,23 +126,25 @@ impl<I: InterpreterIO> DiagnosticPrinter<I> {
                 {
                     if i == span.ln {
                         self.io.println(&format!(
-                            "        {} {}{} {}",
+                            "{}       {} {}{} {}",
+                            "|".color(color).bold(),
                             "|".blue().bold(),
                             " ".repeat(span.col),
-                            "^".repeat(ln.chars().count() - span.col + 1)
-                                .color(color)
-                                .bold(),
-                            "from here".purple().bold()
+                            "^".color(color).bold(),
+                            "from here...".purple().bold()
                         ));
-                    } else if i == span.ln + 1 {
-                        self.io
-                            .println(&format!("        {}", "| ...".blue().bold()))
+                    } else if i == span.ln + 1 && !matches!(endln - span.ln, 1..=3) {
+                        self.io.println(&format!(
+                            "{}       {}",
+                            "|".color(color).bold(),
+                            "| ...".blue().bold()
+                        ))
                     } else if i == endln {
                         self.io.println(&format!(
                             "        {} {}{} {}",
                             "|".blue().bold(),
-                            " ".repeat(span.col),
-                            "^".repeat(endcol).color(color).bold(),
+                            " ".repeat(endcol),
+                            "^".color(color).bold(),
                             "to here".purple().bold()
                         ));
                     }
@@ -225,7 +232,7 @@ pub enum ErrType {
 pub enum WarnType {
     InputWithPrompt,
     UnconventionalVariableName,
-    AmbiguousVariableName
+    AmbiguousVariableName,
 }
 
 impl Display for WarnType {

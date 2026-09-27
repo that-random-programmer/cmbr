@@ -1,0 +1,7 @@
+{
+    "rust-analyzer.cargo.features": [
+        "wasm"
+    ],
+    "rust-analyzer.cargo.allTargets": true,
+    "rust-analyzer.check.allTargets": true,
+}
