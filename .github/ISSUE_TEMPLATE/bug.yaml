@@ -1,0 +1,28 @@
+name: Bug report
+decription: File a bug report
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: "File a bug report"
+  - type: textarea
+    attributes:
+      label: What happened?
+      placeholder: What did you expect? What did you get?
+    validations:
+      required: true
+  - type: dropdown
+    attributes:
+      label: Environment
+      options:
+        - Web interface
+        - Windows
+        - Linux
+        - macOS
+    validations:
+      required: true
+  - type: textarea
+    attributes: 
+      label: Additional information
+    
+    
