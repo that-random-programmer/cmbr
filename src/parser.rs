@@ -453,7 +453,8 @@ impl Parser {
                     self.advance();
                     let mut stmnts = Vec::new();
                     while self.expect_token()?.token != TokenType::Endcase {
-                        stmnts.push(self.stmnt()?)
+                        stmnts.push(self.stmnt()?);
+                        self.skip_newline();
                     }
                     otherwise = Some(stmnts)
                 }
