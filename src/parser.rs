@@ -297,22 +297,24 @@ impl Parser {
             TokenType::Endif | TokenType::Else
         ) {
             stmts.push(self.stmnt()?);
+            self.skip_newline();
         }
         let if_block = Block(stmts);
         let mut else_block = None;
         self.skip_newline();
         while self.expect_token()?.token == TokenType::Else {
             self.advance();
-            self.skip_newline();
             let mut else_stmnt = Vec::new();
             if self.expect_token()?.token == TokenType::If {
                 else_stmnt.push(self.parse_if(true)?);
             } else {
+                self.skip_newline();
                 while !matches!(
                     self.expect_token()?.token,
                     TokenType::Endif | TokenType::Else
                 ) {
                     else_stmnt.push(self.stmnt()?);
+                    self.skip_newline();
                 }
             }
 

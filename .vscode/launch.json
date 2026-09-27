@@ -14,7 +14,8 @@
                     "--bin=cmbr",
                 ]
             },
-            "args": ["test.cmb"]
+            "args": ["test.cmb"],
+            "sourceLanguages": ["rust"]
         },
         {
             "name": "Debug unit tests in executable 'cmbr'",
