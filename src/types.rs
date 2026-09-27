@@ -56,7 +56,7 @@ impl InterpreterIO for CLIInterpreterIO {
 impl<I: InterpreterIO> DiagnosticPrinter<I> {
     pub fn print_diagnostic(&self, diag: &impl Failure) {
         let color = match diag.ty() {
-            FailureType::Error => AnsiColors::Red,
+            FailureType::Error | FailureType::RuntimeError => AnsiColors::Red,
             FailureType::Warning => AnsiColors::Yellow,
         };
 
@@ -224,7 +224,7 @@ pub enum ErrType {
 #[derive(Debug, Clone)]
 pub enum WarnType {
     InputWithPrompt,
-    UnrecommendedVariableName
+    UnrecommendedVariableName,
 }
 
 impl Display for WarnType {
@@ -292,6 +292,7 @@ pub enum DiagType {
 #[derive(Clone, Debug, Copy)]
 pub enum FailureType {
     Error,
+    RuntimeError,
     Warning,
 }
 impl Display for FailureType {
@@ -299,6 +300,7 @@ impl Display for FailureType {
         match self {
             FailureType::Error => write!(f, "error"),
             FailureType::Warning => write!(f, "warning"),
+            FailureType::RuntimeError => write!(f, "error[runtime]"),
         }
     }
 }
@@ -311,6 +313,7 @@ pub trait Failure {
         match self.ty() {
             FailureType::Error => true,
             FailureType::Warning => false,
+            FailureType::RuntimeError => true,
         }
     }
 }
@@ -321,7 +324,7 @@ impl Failure for RuntimeError {
     }
 
     fn msg(&self) -> String {
-        format!("{} (runtime error): {}", self.ty, self.msg.clone())
+        format!("{}: {}", self.ty, self.msg.clone())
     }
 
     fn info(&self) -> &Vec<Info> {
@@ -329,7 +332,7 @@ impl Failure for RuntimeError {
     }
 
     fn ty(&self) -> FailureType {
-        FailureType::Error
+        FailureType::RuntimeError
     }
 }
 

@@ -32,7 +32,8 @@ fn main() {
 
     let fp = cli.path.to_string_lossy();
     let tk = Tokenizer::new(buf.clone(), fp.clone());
-    let diag_printer: DiagnosticPrinter<CLIInterpreterIO> = DiagnosticPrinter::new(buf, CLIInterpreterIO);
+    let diag_printer: DiagnosticPrinter<CLIInterpreterIO> =
+        DiagnosticPrinter::new(buf, CLIInterpreterIO);
     let mut tkns = Vec::new();
     for tkn in tk {
         match tkn {
