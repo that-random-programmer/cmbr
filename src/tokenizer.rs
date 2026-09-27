@@ -201,6 +201,7 @@ pub struct Tokenizer {
     previous_span: Option<Span>,
     content: String,
     diag_queue: Vec<Diagnostic>,
+    warned_vars: Vec<String>,
 }
 fn is_all_caps(string: &str) -> bool {
     for char in string.chars() {
@@ -448,14 +449,23 @@ impl Tokenizer {
             out.push(c);
             self.advance();
         }
-
-        if out != out.to_pascal_case() {
+        if out.len() == 1 && !self.warned_vars.contains(&out) {
+            self.warned_vars.push(out.clone());
             self.diag_queue.push(Diagnostic {
-                ty: DiagType::Warn(WarnType::UnrecommendedVariableName),
+                ty: DiagType::Warn(WarnType::AmbiguousVariableName),
+                info: vec![Info::note(
+                    "variable names should be descriptive, like: Name, DistanceRan, etc.",
+                )],
+                span: Some(start.merge(self.prev_span())),
+            })
+        } else if out != out.to_pascal_case() && !self.warned_vars.contains(&out) {
+            self.warned_vars.push(out.clone());
+            self.diag_queue.push(Diagnostic {
+                ty: DiagType::Warn(WarnType::UnconventionalVariableName),
                 info: vec![
                     Info::note("variable names should use UpperCamelCase"),
                     Info::help(format!(
-                        "a recommended name would be {}",
+                        "a conventional name would be {}",
                         out.to_upper_camel_case()
                     )),
                 ],
@@ -550,6 +560,7 @@ impl Tokenizer {
             },
             previous_span: None,
             diag_queue: Vec::new(),
+            warned_vars: Vec::new(),
         }
     }
     pub fn advance(&mut self) -> Option<char> {

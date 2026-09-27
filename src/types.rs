@@ -224,14 +224,16 @@ pub enum ErrType {
 #[derive(Debug, Clone)]
 pub enum WarnType {
     InputWithPrompt,
-    UnrecommendedVariableName,
+    UnconventionalVariableName,
+    AmbiguousVariableName
 }
 
 impl Display for WarnType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             WarnType::InputWithPrompt => write!(f, "input statement with a prompt"),
-            WarnType::UnrecommendedVariableName => write!(f, "unreccomended variable name"),
+            WarnType::UnconventionalVariableName => write!(f, "unconventional variable name"),
+            WarnType::AmbiguousVariableName => write!(f, "ambiguous variable name"),
         }
     }
 }
