@@ -54,9 +54,15 @@ pub struct Variable {
     declared_ty: Type,
     value: Option<Value>,
 }
+pub struct Constant {
+    name: (String, Span),
+    value: (Atom, Span),
+    ty: Type,
+}
 pub struct Treewalker<I: InterpreterIO> {
     nodes: Vec<ASTNode>,
     variables: HashMap<String, Variable>,
+    constants: HashMap<String, Constant>,
     io: I,
 }
 #[derive(Debug, Clone, Copy)]
@@ -289,6 +295,7 @@ impl<I: InterpreterIO> Treewalker<I> {
             nodes: nodes.to_vec(),
             variables: HashMap::new(),
             io,
+            constants: HashMap::new(),
         }
     }
 
@@ -434,7 +441,18 @@ impl<I: InterpreterIO> Treewalker<I> {
                 ExprType::Atom(atom) => match atom {
                     Atom::String(s) => Ok(Value::String(s)),
                     Atom::Int(i) => Ok(Value::Int(i)),
-                    Atom::Ident(n) => Ok(self.var_value(&n, expr.span)?.clone()),
+                    Atom::Ident(n) => {
+                        if let Some(v) = self.constants.get(&n) {
+                            return Ok(self.exec_node(ASTNode {
+                                ty: ASTNodeType::Expr(Expr {
+                                    ty: ExprType::Atom(v.value.0.clone()),
+                                    span: v.value.1.clone(),
+                                }),
+                                span: v.value.1.clone(),
+                            })?);
+                        }
+                        Ok(self.var_value(&n, expr.span)?.clone())
+                    }
                     Atom::Real(r) => Ok(Value::Real(NotNan::new(r).expect("ICE: float is NaN"))),
                     Atom::Boolean(b) => Ok(Value::Bool(b)),
                 },
@@ -810,6 +828,17 @@ impl<I: InterpreterIO> Treewalker<I> {
                 })?;
                 self.set_var(&ident, val, astnode.span)?;
 
+                Ok(Value::Null)
+            }
+            ASTNodeType::Constant { ident, value } => {
+                self.constants.insert(
+                    ident.clone().0,
+                    Constant {
+                        name: ident,
+                        ty: value.0.ty().expect("ICE: got constant with IDENTIFIER"), // .unwrap() is safe to use, as the parser calls static_atom()
+                        value: value,
+                    },
+                );
                 Ok(Value::Null)
             }
         }

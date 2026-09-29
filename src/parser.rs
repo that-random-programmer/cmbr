@@ -50,6 +50,10 @@ pub enum ASTNodeType {
         ident: (String, Span),
         value: Expr,
     },
+    Constant {
+        ident: (String, Span),
+        value: (Atom, Span),
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -126,7 +130,17 @@ pub enum Atom {
     Real(f64),
     Boolean(bool),
 }
-
+impl Atom {
+    pub fn ty(&self) -> Option<Type> {
+        Some(match self {
+            Atom::String(_) => Type::String,
+            Atom::Int(_) => Type::Int,
+            Atom::Ident(_) => None?,
+            Atom::Real(_) => Type::Real,
+            Atom::Boolean(_) => Type::Bool,
+        })
+    }
+}
 #[derive(Debug, Clone)]
 pub struct Expr {
     pub ty: ExprType,
@@ -358,6 +372,24 @@ impl Parser {
         self.skip_newline();
         let start = self.span.clone();
         match self.expect_token()?.token {
+            TokenType::Constant => {
+                self.advance();
+                let ident_str = self.eat(&TokenKind::Ident)?.str_value().to_owned();
+                let count = ident_str.chars().count();
+                let ident = (ident_str.clone(), self.previous_span.clone());
+                self.eat(&TokenKind::Equals)?;
+                let val_atom = self.static_atom_info(&vec![
+                    Info::note("constants must have a static value like a string, integer, or real")
+                    , Info::help(format!("consider changing the statement to something like \n    {ident_str} = \"some string\"\n{}        ^^^^^^^^^^^^ or some other static type like 5, 3.14, TRUE, etc.\ninstead", " ".repeat(count)))
+                    ])?;
+                let value = (val_atom, self.span.clone());
+                self.advance();
+                self.newline(start.merge(self.previous_span.clone()))?;
+                Ok(ASTNode {
+                    ty: ASTNodeType::Constant { ident, value },
+                    span: start.merge(self.previous_span.clone()),
+                })
+            }
             TokenType::Input => {
                 self.advance();
                 let ident = (
@@ -509,7 +541,7 @@ impl Parser {
             }),
         }
     }
-    fn static_atom(&mut self) -> Result<Atom, Diagnostic> {
+    fn static_atom_info(&mut self, info: &[Info]) -> Result<Atom, Diagnostic> {
         match self.expect_token()?.token {
             TokenType::Int(v) => Ok(Atom::Int(v)),
             TokenType::Real(v) => Ok(Atom::Real(*v)),
@@ -521,10 +553,13 @@ impl Parser {
                     tkn: t,
                     expected: Some(STATIC_ATOM.to_vec()),
                 }),
-                info: vec![],
+                info: info.to_vec(),
                 span: Some(self.span.clone()),
             }),
         }
+    }
+    fn static_atom(&mut self) -> Result<Atom, Diagnostic> {
+        self.static_atom_info(&[])
     }
     pub fn expr(&mut self) -> Result<Expr, Diagnostic> {
         self.expr_r(0)

@@ -51,6 +51,7 @@ pub enum TokenType {
     True,
     Otherwise,
     Endcase,
+    Constant
 }
 
 impl TokenType {
@@ -191,6 +192,7 @@ impl Display for TokenKind {
             TokenKind::False => write!(f, "TRUE"),
             TokenKind::True => write!(f, "FALSE"),
             TokenKind::Endcase => write!(f, "ENDCASE"),
+            TokenKind::Constant => write!(f, "CONSTANT"),
         }
     }
 }
@@ -344,8 +346,16 @@ impl Tokenizer {
             self.advance_multiple(3);
             return Ok(Some(Token {
                 token: TokenType::LogicalAnd,
-                span: start.merge(self.prev_span()),
+                span: start.merge(self.prev_span(
+                )),
             }));
+        }
+        else if self.check("CONSTANT") {
+            self.advance_multiple(8);
+            return Ok(Some(Token {
+                token: TokenType::Constant,
+                span: start.merge(self.prev_span())
+            }))
         } else if self.check("NOT") {
             self.advance_multiple(6);
             return Ok(Some(Token {
