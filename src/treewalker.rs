@@ -632,7 +632,7 @@ impl<I: InterpreterIO> Treewalker<I> {
                             )),
                         },
                         BinOpType::IntegerDivide => match divide(node, operand, astnode.span)? {
-                            Value::Real(r) => Ok(Value::Int(r.round() as i32)),
+                            Value::Real(r) => Ok(Value::Int(r.floor() as i32)),
                             _ => unreachable!(),
                         },
                         BinOpType::Divide => divide(node, operand, astnode.span),

@@ -334,6 +334,12 @@ impl Tokenizer {
                 token: TokenType::Endif,
                 span: start.merge(self.prev_span()),
             }));
+        } else if self.check("DIV") {
+            self.advance_multiple(3);
+            return Ok(Some(Token {
+                token: TokenType::IntegerDivide,
+                span: start.merge(self.prev_span())
+            }))
         } else if self.check("AND") {
             self.advance_multiple(3);
             return Ok(Some(Token {
