@@ -201,6 +201,17 @@ impl Span {
             },
         }
     }
+    pub fn eof(from: Span) -> Self {
+        Span {
+            ln: from.endln.unwrap_or(from.ln),
+            col: from.endcol.unwrap_or(from.col),
+            pos: from.endpos.unwrap_or(from.pos),
+            endln: None,
+            endcol: None,
+            endpos: None,
+            ..from
+        }
+    }
     pub fn empty(fp: impl Into<Rc<str>>) -> Self {
         Span {
             ln: 0,
