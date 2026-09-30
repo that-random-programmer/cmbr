@@ -718,7 +718,11 @@ impl Parser {
             None => Err(Diagnostic {
                 ty: DiagType::Err(ErrType::UnexpectedEOF),
                 info: vec![Info::note("EOF stands for End Of File")],
-                span: Some(self.span.clone()),
+                span: Some(
+                    self.tkns
+                        .last()
+                        .map_or(Span::empty(self.fp.clone()), |i| Span::eof(i.span.clone())),
+                ),
             }),
         }
     }
