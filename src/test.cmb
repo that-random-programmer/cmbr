@@ -1,0 +1,58 @@
+DECLARE name1 : STRING
+DECLARE name2 : STRING
+DECLARE name3 : STRING
+DECLARE canidate : INTEGER
+DECLARE vote1 : INTEGER
+DECLARE vote3 : INTEGER
+
+
+// automatic terrible idea for voting
+OUTPUT"name of first canidate"
+INPUT name1
+OUTPUT"name of second canidate"
+INPUT name2
+OUTPUT"name of third canidate"
+INPUT name3
+OUTPUT" ENTER WHICH CANIDATE U WANNA CHECK OUT"
+INPUT canidate
+//checking for elligiblilty
+CASE OF canidate
+    1 : OUTPUT"enter number of votes canidate 1 got"
+        INPUT vote1
+        IF vote1>=1500 THEN
+            OUTPUT" ELLIGIBLE BROTHER OR SISTER "
+        ELSE IF vote1<1500 THEN
+            OUTPUT"NOT ELLIGIBLE"
+        ENDIF
+    2 : OUTPUT"enter number of votes canidate 2 got"
+        INPUT vote2
+        IF vote2>=1500 THEN
+            OUTPUT" ELLIGIBLE BROTHER OR SISTER "
+        ELSE IF vote2<1500 THEN
+            OUTPUT"NOT ELLIGIBLE"
+        ENDIF
+    3 : OUTPUT"enter number of votes canidate 3 got"
+        INPUT vote3
+        IF vote3>=1500 THEN
+            OUTPUT" ELLIGIBLE BROTHER OR SISTER "
+        ELSE IF vote3<1500 THEN
+            OUTPUT"NOT ELLIGIBLE"
+        ENDIF
+ENDCASE
+IF vote1 > vote2 AND vote1 > vote3 THEN
+    OUTPUT"WIN"
+ELSE 
+    OUTPUT"LOSE"
+ENDIF
+
+IF vote2>vote1 AND vote2>vote3 THEN
+    OUTPUT"WIN"
+ELSE 
+    OUTPUT"LOSE"
+ENDIF
+
+IF vote3>vote1 AND vote3>vote2 THEN
+    OUTPUT"WIN"
+ELSE 
+    OUTPUT"LOSE"
+ENDIF

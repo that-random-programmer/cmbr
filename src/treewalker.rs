@@ -351,7 +351,7 @@ impl<I: InterpreterIO> Treewalker<I> {
                     span,
                     ty: RuntimeErrorType::ReferenceError,
                     info: vec![Info::help(format!(
-                        "did you set the variable with `{name} <- {}`? (note that `{}` is an example), or did you input it with `INPUT \"optional prompt\", {name}`",
+                        "did you set the variable with `{name} <- {}`? (note that `{}` is an example), or did you input it with `INPUT {name}, \"optional prompt\"`",
                         example_type(&v.declared_ty),
                         example_type(&v.declared_ty)
                     ))],
