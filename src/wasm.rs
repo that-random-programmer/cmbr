@@ -3,17 +3,19 @@ use owo_colors::OwoColorize;
 use wasm_bindgen::{JsValue, prelude::wasm_bindgen};
 
 use crate::{
-    parser::Parser,
+    checker::Checker,
+    parser::{Parser, SpanType},
     tokenizer::Tokenizer,
     treewalker::{RuntimeError, RuntimeErrorType, Treewalker},
-    types::{DiagnosticPrinter, Failure, Info, InterpreterIO, Span},
+    types::{DiagnosticPrinter, Failure, Info, InterpreterIO},
 };
 
 #[wasm_bindgen]
-pub fn run(source: &str, read_line: Function, print_hook: Function) {
+pub fn run(source: &str, read_line: Function, print_hook: Function, ask_hook: Function) {
     let io = WasmIO {
         read_line_hook: read_line,
         print_hook,
+        ask_hook
     };
 
     work(source, io.clone());
@@ -54,6 +56,21 @@ fn work(source: &str, io: WasmIO) {
         }
     }
 
+    let mut checker = Checker::new(None);
+    let mut failed = false;
+    for node in &nodes {
+        if let Err(e) = checker.check_node(node) {
+            diag_printer.print_diagnostic(&e);
+            if e.is_critical() {
+                failed = true
+            }
+        }
+    }
+
+    if failed {
+        return;
+    }
+
     io.println(&format!("{}", "---- running ----".bright_black()));
 
     let mut treewalker = Treewalker::new(&nodes, io);
@@ -69,6 +86,7 @@ fn work(source: &str, io: WasmIO) {
 pub struct WasmIO {
     read_line_hook: js_sys::Function,
     print_hook: js_sys::Function,
+    ask_hook: js_sys::Function
 }
 
 impl InterpreterIO for WasmIO {
@@ -79,7 +97,7 @@ impl InterpreterIO for WasmIO {
             .unwrap();
     }
 
-    fn read_line(&self, span: Span) -> Result<String, RuntimeError> {
+    fn read_line(&self, span: SpanType) -> Result<String, RuntimeError> {
         match self.read_line_hook.call0(&JsValue::NULL) {
             Ok(v) => Ok(v.as_string().unwrap()),
             Err(e) => Err(RuntimeError {

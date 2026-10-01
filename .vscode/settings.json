@@ -1,7 +1,27 @@
 {
     "rust-analyzer.cargo.features": [
-        "wasm"
+        "wasm",
+        "cli"
     ],
     "rust-analyzer.cargo.allTargets": true,
     "rust-analyzer.check.allTargets": true,
+    "cSpell.words": [
+        "amnt",
+        "astnode",
+        "bindgen",
+        "cdylib",
+        "cmbr",
+        "Endcase",
+        "endcol",
+        "endln",
+        "endpos",
+        "funcs",
+        "impls",
+        "rlib",
+        "stmnt",
+        "stmnts",
+        "tknr",
+        "tkns",
+        "treewalker"
+    ],
 }
