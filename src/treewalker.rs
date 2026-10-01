@@ -3,7 +3,8 @@ use std::{collections::HashMap, fmt::Display, io::Write};
 use ordered_float::NotNan;
 
 use crate::{
-    parser::{ASTNode, ASTNodeType, Atom, BinOpType, Expr, ExprType, UnaryOpType},
+    checker::undeclared_variable_info,
+    parser::{ASTNode, ASTNodeType, Atom, BinOpType, Expr, ExprType, SpanType, UnaryOpType},
     types::{Info, InterpreterIO, Span},
 };
 
@@ -13,16 +14,18 @@ pub enum Value {
     Int(i32),
     Bool(bool),
     Real(NotNan<f64>),
-    Null,
+    Nothing,
 }
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Copy)]
 pub enum Type {
     String,
     Int,
     Bool,
-    Null,
     Char,
     Real,
+}
+pub fn print_ty_option(t: Option<Type>) -> String {
+    t.map_or(String::from("nothing"), |i| i.to_string())
 }
 impl Value {
     fn ty(&self) -> Type {
@@ -30,8 +33,8 @@ impl Value {
             Value::String(_) => Type::String,
             Value::Int(_) => Type::Int,
             Value::Bool(_) => Type::Bool,
-            Value::Null => Type::Null,
             Value::Real(_) => Type::Real,
+            Value::Nothing => unreachable!("attempted getting the type of Nothing"),
         }
     }
 }
@@ -41,7 +44,6 @@ impl Display for Type {
             Type::String => write!(f, "STRING"),
             Type::Int => write!(f, "INTEGER"),
             Type::Bool => write!(f, "BOOLEAN"),
-            Type::Null => write!(f, "NULL"),
             Type::Char => write!(f, "CHAR"),
             Type::Real => write!(f, "REAL"),
         }
@@ -87,7 +89,7 @@ impl Display for RuntimeErrorType {
 #[derive(Debug, Clone)]
 pub struct RuntimeError {
     pub msg: String,
-    pub span: Span,
+    pub span: SpanType,
     pub ty: RuntimeErrorType,
     pub info: Vec<Info>,
 }
@@ -122,19 +124,12 @@ impl AsValue for NotNan<f64> {
 
 // TODO: rest of the AsValue impls
 
-fn var_not_decl_err(name: &str, span: Span) -> RuntimeError {
+fn var_not_decl_err(name: &str, span: SpanType) -> RuntimeError {
     RuntimeError {
         msg: format!("cannot find variable {name}"),
         span,
         ty: RuntimeErrorType::ReferenceError,
-        info: vec![
-            Info::help(format!(
-                "try adding `DECLARE {name} : // type` to the top of your program"
-            )),
-            // Info::help( // TODO: this feature
-            // "does your syllabus cover `DECLARE`? if not, run with the `-ie` or `-io` flag ",
-            // ),
-        ],
+        info: undeclared_variable_info(name.to_owned(), None),
     }
 }
 // note that these conversion funcs aren't complete, except for to_str()
@@ -143,11 +138,11 @@ fn to_str(val: Value) -> String {
         Value::String(s) => s,
         Value::Int(i) => i.to_string(),
         Value::Bool(b) => b.to_string(),
-        Value::Null => String::from("null"),
         Value::Real(v) => v.to_string(),
+        Value::Nothing => "<nothing>".to_string(), // TODO: perhaps consider removing the Nothing type
     }
 }
-fn to_int(val: Value, span: Span) -> Result<i32, RuntimeError> {
+fn to_int(val: Value, span: SpanType) -> Result<i32, RuntimeError> {
     match val {
         Value::String(s) => match s.parse() {
             Ok(v) => Ok(v),
@@ -167,11 +162,10 @@ fn to_int(val: Value, span: Span) -> Result<i32, RuntimeError> {
         }),
     }
 }
-fn to_bool(val: Value, span: Span) -> Result<bool, RuntimeError> {
+fn to_bool(val: Value, span: SpanType) -> Result<bool, RuntimeError> {
     match val {
         Value::String(s) => Ok(matches!(s.to_lowercase().as_str(), "true" | "yes")),
         Value::Bool(v) => Ok(v),
-        Value::Null => Ok(false),
         t => Err(RuntimeError {
             msg: format!("cannot convert a(n) {} to a `BOOLEAN`", t.ty()),
             span,
@@ -181,7 +175,7 @@ fn to_bool(val: Value, span: Span) -> Result<bool, RuntimeError> {
     }
 }
 
-fn to_real(val: Value, span: Span) -> Result<NotNan<f64>, RuntimeError> {
+fn to_real(val: Value, span: SpanType) -> Result<NotNan<f64>, RuntimeError> {
     match val {
         Value::String(s) => match s.parse() {
             Ok(v) => Ok(v),
@@ -203,7 +197,7 @@ fn to_real(val: Value, span: Span) -> Result<NotNan<f64>, RuntimeError> {
     }
 }
 
-fn op_type_err(op: &str, t1: Type, t2: Type, span: Span) -> RuntimeError {
+fn op_type_err(op: &str, t1: Type, t2: Type, span: SpanType) -> RuntimeError {
     RuntimeError {
         msg: format!("cannot {op} a(n) {t1} and a(n) {t2}"),
         span,
@@ -211,7 +205,7 @@ fn op_type_err(op: &str, t1: Type, t2: Type, span: Span) -> RuntimeError {
         info: vec![],
     }
 }
-fn as_str(value: Value, span: Span) -> Result<String, RuntimeError> {
+fn as_str(value: Value, span: SpanType) -> Result<String, RuntimeError> {
     match value {
         Value::String(v) => Ok(v),
         t => Err(RuntimeError {
@@ -227,13 +221,12 @@ fn example_type(ty: &Type) -> &str {
         Type::String => "\"example\"",
         Type::Int => "5",
         Type::Bool => "TRUE",
-        Type::Null => "NULL",
         Type::Char => "'a'",
         Type::Real => "3.14",
     }
 }
 
-fn divide(node: Value, operand: Value, span: Span) -> Result<Value, RuntimeError> {
+fn divide(node: Value, operand: Value, span: SpanType) -> Result<Value, RuntimeError> {
     match node {
         Value::Int(i1) => match operand {
             Value::Int(i2) => {
@@ -299,7 +292,7 @@ impl<I: InterpreterIO> Treewalker<I> {
         }
     }
 
-    fn set_var(&mut self, name: &str, val: Value, span: Span) -> Result<(), RuntimeError> {
+    fn set_var(&mut self, name: &str, val: Value, span: SpanType) -> Result<(), RuntimeError> {
         let var = match self.variables.get_mut(name) {
             None => {
                 return Err(var_not_decl_err(name, span));
@@ -324,7 +317,7 @@ impl<I: InterpreterIO> Treewalker<I> {
         var.value = Some(val);
         Ok(())
     }
-    fn var_ty(&self, name: &str, span: Span) -> Result<Type, RuntimeError> {
+    fn var_ty(&self, name: &str, span: SpanType) -> Result<Type, RuntimeError> {
         match self.variables.get(name) {
             Some(v) => Ok(v.declared_ty),
             None => Err(var_not_decl_err(name, span)),
@@ -342,7 +335,7 @@ impl<I: InterpreterIO> Treewalker<I> {
     //     }
     //     Ok(v)
     // }
-    fn var_value(&self, name: &str, span: Span) -> Result<&Value, RuntimeError> {
+    fn var_value(&self, name: &str, span: SpanType) -> Result<&Value, RuntimeError> {
         match self.variables.get(name) {
             Some(v) => match &v.value {
                 Some(value) => Ok(value),
@@ -368,13 +361,13 @@ impl<I: InterpreterIO> Treewalker<I> {
             } => {
                 let condition = match self.exec_node(ASTNode {
                     ty: ASTNodeType::Expr(condition.clone()),
-                    span: condition.span.clone(),
+                    span: SpanType::Syntax(condition.span.clone()),
                 })? {
                     Value::Bool(b) => b,
                     t => {
                         return Err(RuntimeError {
                             msg: format!("expected a BOOLEAN, got a `{}`", t.ty()),
-                            span: condition.span,
+                            span: SpanType::Syntax(condition.span),
                             ty: RuntimeErrorType::TypeError,
                             info: vec![],
                         });
@@ -389,19 +382,19 @@ impl<I: InterpreterIO> Treewalker<I> {
                         self.exec_node(stmnt)?;
                     }
                 }
-                Ok(Value::Null)
+                Ok(Value::Nothing)
             }
             ASTNodeType::Input { ident, prompt } => {
-                let span = ident.1;
+                let span = SpanType::Syntax(ident.1);
                 let ident = ident.0;
                 self.var_ty(&ident, span.clone())?; // just to check that it exists before asking the prompt
                 let p = match prompt {
                     Some(v) => as_str(
                         self.exec_node(ASTNode {
                             ty: ASTNodeType::Expr(v.clone()),
-                            span: v.span.clone(),
+                            span: SpanType::Syntax(v.span.clone()),
                         })?,
-                        v.span,
+                        SpanType::Syntax(v.span),
                     )?,
                     None => format!("input> "),
                 };
@@ -420,21 +413,13 @@ impl<I: InterpreterIO> Treewalker<I> {
                     Type::String => buf,
                     Type::Int => to_int(buf, astnode.span)?.as_value(),
                     Type::Bool => to_bool(buf, astnode.span)?.as_value(),
-                    Type::Null => {
-                        return Err(RuntimeError {
-                            msg: "cannot `INPUT` a value into a `NULL` type variable".to_string(),
-                            span,
-                            ty: RuntimeErrorType::TypeError,
-                            info: vec![Info::note(format!("{ident} is type NULL"))],
-                        });
-                    }
                     Type::Char => todo!(),
                     Type::Real => to_real(buf, astnode.span)?.as_value(),
                 };
 
                 self.set_var(&ident, out, span)?;
 
-                return Ok(Value::Null);
+                return Ok(Value::Nothing);
             }
             ASTNodeType::Expr(expr) => match expr.ty {
                 ExprType::Atom(atom) => match atom {
@@ -442,15 +427,15 @@ impl<I: InterpreterIO> Treewalker<I> {
                     Atom::Int(i) => Ok(Value::Int(i)),
                     Atom::Ident(n) => {
                         if let Some(v) = self.constants.get(&n) {
-                            return Ok(self.exec_node(ASTNode {
+                            return self.exec_node(ASTNode {
                                 ty: ASTNodeType::Expr(Expr {
                                     ty: ExprType::Atom(v.value.0.clone()),
                                     span: v.value.1.clone(),
                                 }),
-                                span: v.value.1.clone(),
-                            })?);
+                                span: SpanType::Syntax(v.value.1.clone()),
+                            });
                         }
-                        Ok(self.var_value(&n, expr.span)?.clone())
+                        Ok(self.var_value(&n, SpanType::Syntax(expr.span))?.clone())
                     }
                     Atom::Real(r) => Ok(Value::Real(NotNan::new(r).expect("ICE: float is NaN"))),
                     Atom::Boolean(b) => Ok(Value::Bool(b)),
@@ -458,11 +443,11 @@ impl<I: InterpreterIO> Treewalker<I> {
                 ExprType::BinOp(op, node, operand) => {
                     let node = self.exec_node(ASTNode {
                         ty: ASTNodeType::Expr(*node.clone()),
-                        span: node.span,
+                        span: SpanType::Syntax(node.span),
                     })?;
                     let operand = self.exec_node(ASTNode {
                         ty: ASTNodeType::Expr(*operand.clone()),
-                        span: operand.span,
+                        span: SpanType::Syntax(operand.span),
                     })?;
                     match op {
                         BinOpType::Add => match node {
@@ -749,7 +734,7 @@ impl<I: InterpreterIO> Treewalker<I> {
                 ExprType::UnaryOp(op, node) => {
                     let node = self.exec_node(ASTNode {
                         ty: ASTNodeType::Expr(*node.clone()),
-                        span: node.span,
+                        span: SpanType::Syntax(node.span),
                     })?;
                     match op {
                         UnaryOpType::LogicalNot => Ok(Value::Bool(!to_bool(node, astnode.span)?)),
@@ -763,11 +748,11 @@ impl<I: InterpreterIO> Treewalker<I> {
                 for expr in exprs {
                     out.push(to_str(self.exec_node(ASTNode {
                         ty: ASTNodeType::Expr(expr.clone()),
-                        span: expr.span,
+                        span: SpanType::Syntax(expr.span),
                     })?))
                 }
                 self.io.print(&format!("{}\n", out.join(" ")));
-                Ok(Value::Null)
+                Ok(Value::Nothing)
             }
             ASTNodeType::Declare {
                 ident: name,
@@ -781,7 +766,7 @@ impl<I: InterpreterIO> Treewalker<I> {
                         value: None,
                     },
                 );
-                Ok(Value::Null)
+                Ok(Value::Nothing)
             }
             ASTNodeType::Case {
                 value,
@@ -790,7 +775,7 @@ impl<I: InterpreterIO> Treewalker<I> {
             } => {
                 let value = self.exec_node(ASTNode {
                     ty: ASTNodeType::Expr(value.clone()),
-                    span: value.span,
+                    span: SpanType::Syntax(value.span),
                 })?;
                 let mut ran = false;
                 for (case, stmnts) in cases {
@@ -799,7 +784,7 @@ impl<I: InterpreterIO> Treewalker<I> {
                             ty: ExprType::Atom(case.0),
                             span: case.1.clone(),
                         }),
-                        span: case.1,
+                        span: SpanType::Syntax(case.1),
                     })?;
                     if eq(&value, &case)? {
                         ran = true;
@@ -815,19 +800,19 @@ impl<I: InterpreterIO> Treewalker<I> {
                         self.exec_node(stmnt)?;
                     }
                 }
-                Ok(Value::Null)
+                Ok(Value::Nothing)
             }
             ASTNodeType::Assign { ident: i, value } => {
                 let ident = i.0;
                 let ident_span = i.1;
-                self.var_ty(&ident, ident_span.clone())?; // check if the variable is declared
+                self.var_ty(&ident, SpanType::Syntax(ident_span.clone()))?; // check if the variable is declared
                 let val = self.exec_node(ASTNode {
                     ty: ASTNodeType::Expr(value.clone()),
-                    span: value.span,
+                    span: SpanType::Syntax(value.span),
                 })?;
                 self.set_var(&ident, val, astnode.span)?;
 
-                Ok(Value::Null)
+                Ok(Value::Nothing)
             }
             ASTNodeType::Constant { ident, value } => {
                 self.constants.insert(
@@ -838,7 +823,7 @@ impl<I: InterpreterIO> Treewalker<I> {
                         value: value,
                     },
                 );
-                Ok(Value::Null)
+                Ok(Value::Nothing)
             }
         }
     }

@@ -3,8 +3,7 @@ use std::{fmt::Display, rc::Rc};
 use owo_colors::{AnsiColors, OwoColorize};
 
 use crate::{
-    tokenizer::{TokenKind, TokenType},
-    treewalker::{RuntimeError, RuntimeErrorType},
+    parser::SpanType, tokenizer::{TokenKind, TokenType}, treewalker::{RuntimeError, RuntimeErrorType, Type},
 };
 #[derive(Debug, Clone)]
 pub struct Span {
@@ -37,7 +36,7 @@ impl InterpreterIO for CLIInterpreterIO {
         print!("{s}");
     }
 
-    fn read_line(&self, span: Span) -> Result<String, RuntimeError> {
+    fn read_line(&self, span: SpanType) -> Result<String, RuntimeError> {
         let mut buf = String::new();
         match std::io::stdin().read_line(&mut buf) {
             Ok(_) => Ok(buf),
@@ -55,9 +54,10 @@ impl InterpreterIO for CLIInterpreterIO {
 
 impl<I: InterpreterIO> DiagnosticPrinter<I> {
     pub fn print_diagnostic(&self, diag: &impl Failure) {
-        let color = match diag.ty() {
-            FailureType::Error | FailureType::RuntimeError => AnsiColors::Red,
-            FailureType::Warning => AnsiColors::Yellow,
+        let color = if diag.is_critical() {
+            AnsiColors::Red
+        } else {
+            AnsiColors::Yellow
         };
 
         self.io.println(&format!(
@@ -66,7 +66,7 @@ impl<I: InterpreterIO> DiagnosticPrinter<I> {
             format!(": {}", diag.msg().bold())
         ));
 
-        if let Some(span) = &diag.span() {
+        if let Some(SpanType::Syntax(span)) = &diag.span() {
             self.io.println(&format!("at {span}"));
             let start = span.ln.saturating_sub(3);
             let end = match span.endln {
@@ -236,6 +236,22 @@ pub enum ErrType {
         tkn: TokenType,
         expected: Option<Vec<TokenKind>>,
     },
+    DuplicateDeclare {
+        ident: String,
+    },
+    UndeclaredVariable {
+        ident: String,
+    },
+    TypeError {
+        expected: Vec<Type>,
+        got: Type,
+    },
+    AttemptedModifyingConst {
+        ident: String,
+    },
+    Other {
+        msg: String
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -266,7 +282,7 @@ impl Display for ErrType {
             ErrType::UnexpectedEOF => write!(f, "unexpected EOF"),
             ErrType::UnterminatedStringLiteral => write!(f, "unterminated string literal"),
             ErrType::UnexpectedToken { tkn, expected } => match expected {
-                Some(e) if e.len() != 0 => {
+                Some(e) if e.is_empty() => {
                     if e.len() == 1 {
                         write!(f, "expected token `{}`, got `{tkn}`", e[0])
                     } else if e.len() == 2 {
@@ -282,63 +298,104 @@ impl Display for ErrType {
                 None | Some(_) => write!(f, "unexpected token `{tkn}`"),
             },
             ErrType::ExpectedNewline => write!(f, "expected a newline after this statement"),
+            ErrType::DuplicateDeclare { ident: name } => {
+                write!(f, "duplicate declaration for {name}")
+            }
+            ErrType::UndeclaredVariable { ident: name } => {
+                write!(f, "variable {name} never declared")
+            }
+            ErrType::TypeError { expected, got } => {
+                if expected.is_empty() {
+                    write!(f, "unexpected type {got}")
+                } else if expected.len() == 1 {
+                    write!(f, "expected type {}, got {got}", expected[0])
+                }else if expected.len() == 2 {
+                    write!(
+                        f,
+                        "expected type {} or {}, got {got}",
+                        expected[0], expected[1]
+                    )
+                } else {
+                    write!(f, "expected type ")?;
+                    for t in &expected[..expected.len() - 1] {
+                        write!(f, "{t}, ")?;
+                    }
+                    write!(f, "or {}, got `{got}`", expected.last().unwrap())
+                }
+            }
+            ErrType::AttemptedModifyingConst { ident } => {
+                write!(f, "attempted to modify constant {ident}")
+            },
+            ErrType::Other { msg } => write!(f, "{msg}")
         }
     }
 }
 impl Display for DiagType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DiagType::Err(err_type) => write!(f, "{err_type}"),
+            DiagType::Err(err_type, _) => write!(f, "{err_type}"),
             DiagType::Warn(warn_type) => write!(f, "{warn_type}"),
         }
     }
 }
 
 pub trait InterpreterIO {
-    fn read_line(&self, span: Span) -> Result<String, RuntimeError>;
+    fn read_line(&self, span: SpanType) -> Result<String, RuntimeError>;
     fn println(&self, s: &str) {
         self.print(&format!("{s}\n"));
     }
     fn print(&self, s: &str);
 }
 
+#[derive(Clone, Debug, Copy)]
+pub enum Stage {
+    Tokenizer,
+    Parser,
+    Checker,
+}
 #[derive(Debug, Clone)]
 pub enum DiagType {
-    Err(ErrType),
+    Err(ErrType, Stage),
     Warn(WarnType),
 }
 
 #[derive(Clone, Debug, Copy)]
 pub enum FailureType {
-    Error,
+    ParseError,
+    TokenizerError,
     RuntimeError,
     Warning,
+    CheckerError,
 }
 impl Display for FailureType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            FailureType::Error => write!(f, "error"),
+            FailureType::ParseError => write!(f, "error[parsing]"),
             FailureType::Warning => write!(f, "warning"),
             FailureType::RuntimeError => write!(f, "error[runtime]"),
+            FailureType::TokenizerError => write!(f, "error[lex]"), // lex is more clear
+            FailureType::CheckerError => write!(f, "error[check]"),
         }
     }
 }
 pub trait Failure {
-    fn span(&self) -> Option<&Span>;
+    fn span(&self) -> Option<&SpanType>;
     fn msg(&self) -> String;
     fn info(&self) -> &Vec<Info>;
     fn ty(&self) -> FailureType;
     fn is_critical(&self) -> bool {
         match self.ty() {
-            FailureType::Error => true,
+            FailureType::ParseError
+            | FailureType::CheckerError
+            | FailureType::TokenizerError
+            | FailureType::RuntimeError => true,
             FailureType::Warning => false,
-            FailureType::RuntimeError => true,
         }
     }
 }
 
 impl Failure for RuntimeError {
-    fn span(&self) -> Option<&Span> {
+    fn span(&self) -> Option<&SpanType> {
         Some(&self.span)
     }
 
@@ -356,7 +413,7 @@ impl Failure for RuntimeError {
 }
 
 impl Failure for Diagnostic {
-    fn span(&self) -> Option<&Span> {
+    fn span(&self) -> Option<&SpanType> {
         self.span.as_ref()
     }
 
@@ -370,8 +427,20 @@ impl Failure for Diagnostic {
 
     fn ty(&self) -> FailureType {
         match self.ty {
-            DiagType::Err(_) => FailureType::Error,
+            DiagType::Err(_, stage) => match stage {
+                Stage::Tokenizer => FailureType::TokenizerError,
+                Stage::Parser => FailureType::ParseError,
+                Stage::Checker => FailureType::CheckerError,
+            },
             DiagType::Warn(_) => FailureType::Warning,
+        }
+    }
+}
+impl Display for SpanType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SpanType::AutoGenerated => write!(f, "<auto generated>"),
+            SpanType::Syntax(span) => write!(f, "{span}"),
         }
     }
 }
@@ -390,7 +459,7 @@ impl Display for Span {
 impl Display for Diagnostic {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.ty)?;
-        if let Some(v) = &self.span {
+        if let Some(SpanType::Syntax(v)) = &self.span {
             write!(f, "\nat {}:{}:{}", v.fp, v.ln + 1, v.col + 1)?;
             if let Some(ln) = v.endln {
                 write!(f, " until {}", ln + 1)?;
@@ -409,7 +478,7 @@ impl Display for Diagnostic {
 pub struct Diagnostic {
     pub ty: DiagType,
     pub info: Vec<Info>,
-    pub span: Option<Span>,
+    pub span: Option<SpanType>,
 }
 #[derive(Debug, Clone)]
 pub struct Info {

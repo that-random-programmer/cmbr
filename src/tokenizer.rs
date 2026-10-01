@@ -4,7 +4,10 @@ use heck::{ToPascalCase, ToUpperCamelCase};
 use ordered_float::NotNan;
 use strum::EnumDiscriminants;
 
-use crate::types::{DiagType, Diagnostic, ErrType, Info, Span, WarnType};
+use crate::{
+    parser::SpanType,
+    types::{DiagType, Diagnostic, ErrType, Info, Span, Stage, WarnType},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, EnumDiscriminants)]
 #[strum_discriminants(name(TokenKind))]
@@ -51,7 +54,7 @@ pub enum TokenType {
     True,
     Otherwise,
     Endcase,
-    Constant
+    Constant,
 }
 
 impl TokenType {
@@ -147,6 +150,8 @@ impl Display for TokenType {
         write!(f, "{}", <&TokenType as Into<TokenKind>>::into(self))
     }
 }
+
+
 impl Display for TokenKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -294,8 +299,8 @@ impl Tokenizer {
                 token: TokenType::RealType,
                 span: start.merge(self.prev_span()),
             }));
-        } else if self.check("BOOOLEAN") {
-            self.advance_multiple(8);
+        } else if self.check("BOOLEAN") {
+            self.advance_multiple(7);
             return Ok(Some(Token {
                 token: TokenType::BooleanType,
                 span: start.merge(self.prev_span()),
@@ -340,22 +345,20 @@ impl Tokenizer {
             self.advance_multiple(3);
             return Ok(Some(Token {
                 token: TokenType::IntegerDivide,
-                span: start.merge(self.prev_span())
-            }))
+                span: start.merge(self.prev_span()),
+            }));
         } else if self.check("AND") {
             self.advance_multiple(3);
             return Ok(Some(Token {
                 token: TokenType::LogicalAnd,
-                span: start.merge(self.prev_span(
-                )),
+                span: start.merge(self.prev_span()),
             }));
-        }
-        else if self.check("CONSTANT") {
+        } else if self.check("CONSTANT") {
             self.advance_multiple(8);
             return Ok(Some(Token {
                 token: TokenType::Constant,
-                span: start.merge(self.prev_span())
-            }))
+                span: start.merge(self.prev_span()),
+            }));
         } else if self.check("NOT") {
             self.advance_multiple(6);
             return Ok(Some(Token {
@@ -402,13 +405,16 @@ impl Tokenizer {
             return self.tokenize_ident().map(|i| Some(i));
         }
         return Err(Diagnostic {
-            ty: DiagType::Err(ErrType::InvalidChar {
-                char: self.current_char,
-            }),
+            ty: DiagType::Err(
+                ErrType::InvalidChar {
+                    char: self.current_char,
+                },
+                Stage::Tokenizer,
+            ),
             info: vec![Info::note(
                 "this character is never used in cambridge pseudocode",
             )],
-            span: Some(self.current_span.clone()),
+            span: Some(SpanType::Syntax(self.current_span.clone())),
         });
     }
 
@@ -465,7 +471,7 @@ impl Tokenizer {
                 info: vec![Info::note(
                     "variable names should be descriptive, like: Name, DistanceRan, etc.",
                 )],
-                span: Some(start.merge(self.prev_span())),
+                span: Some(SpanType::Syntax(start.merge(self.prev_span()))),
             })
         } else if out != out.to_pascal_case() && !self.warned_vars.contains(&out) {
             self.warned_vars.push(out.clone());
@@ -478,7 +484,7 @@ impl Tokenizer {
                         out.to_upper_camel_case()
                     )),
                 ],
-                span: Some(start.merge(self.prev_span())),
+                span: Some(SpanType::Syntax(start.merge(self.prev_span()))),
             })
         }
         return Ok(Token {
@@ -503,9 +509,9 @@ impl Tokenizer {
         }
         if !broken {
             return Err(Diagnostic {
-                ty: DiagType::Err(ErrType::UnterminatedStringLiteral),
+                ty: DiagType::Err(ErrType::UnterminatedStringLiteral, Stage::Tokenizer),
                 info: vec![Info::note("you never ended the string")],
-                span: Some(start.merge(self.prev_span())),
+                span: Some(SpanType::Syntax(start.merge(self.prev_span()))),
             });
         }
         return Ok(Token {
@@ -542,9 +548,9 @@ impl Tokenizer {
 impl Tokenizer {
     fn eof(&self) -> Diagnostic {
         Diagnostic {
-            ty: DiagType::Err(ErrType::UnexpectedEOF),
+            ty: DiagType::Err(ErrType::UnexpectedEOF, Stage::Tokenizer),
             info: vec![Info::note("EOF stands for End Of File")],
-            span: Some(self.current_span.clone()),
+            span: Some(SpanType::Syntax(self.current_span.clone())),
         }
     }
     fn expect_char(&self) -> Result<char, Diagnostic> {
