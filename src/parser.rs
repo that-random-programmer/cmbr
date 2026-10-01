@@ -209,10 +209,10 @@ impl Display for ExprType {
         match self {
             ExprType::Atom(atom) => write!(f, "{atom}"),
             ExprType::BinOp(ty, item1, item2) => {
-                write!(f, "({ty} {item1} {item2})")
+                write!(f, "({item1} {ty} {item2})")
             }
             ExprType::UnaryOp(ty, item) => {
-                write!(f, "({ty} {item})")
+                write!(f, "({ty}{item})")
             }
         }
     }
@@ -256,7 +256,7 @@ mod test {
     fn expr() {
         assert_eq!(
             parse("5 + 2 * 6 / 6").unwrap().to_string().as_str(),
-            "(+ 5 (/ (* 2 6) 6))"
+            "(5 + ((2 * 6) / 6))"
         )
     }
 }
