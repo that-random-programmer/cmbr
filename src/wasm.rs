@@ -35,7 +35,7 @@ fn work(source: &str, io: WasmIO) {
                 }
             }
             Err(e) => {
-                diag_printer.print_diagnostic(&e);
+                diag_printer.print_diagnostic(&*e);
                 if e.is_critical() {
                     return;
                 }
