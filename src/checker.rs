@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 use crate::{
     parser::{ASTNode, ASTNodeType, Atom, BinOpType, Expr, ExprType, SpanType, UnaryOpType},
@@ -15,6 +15,9 @@ pub struct Checker {
     declared_vars: HashMap<String, (Type, VarType)>,
     auto_decl: Option<Box<dyn FnMut(String) -> Result<Type, Diagnostic>>>,
     pub generated_decls: Vec<(String, Type)>,
+    diag_queue: VecDeque<Diagnostic>,
+    pos: usize,
+    nodes: Vec<ASTNode>
 }
 
 pub struct DeclResolution {
@@ -44,13 +47,31 @@ pub fn undeclared_variable_info(name: String, ty: Option<Type>) -> Vec<Info> {
         ),
     ]
 }
+impl Iterator for &mut Checker {
+    type Item = Result<(), Diagnostic>;
 
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(d) = self.diag_queue.pop_front() {
+            return Some(Err(d))
+        }
+        if let Some(node) = self.nodes.get(self.pos) {
+            let out = Some(self.check_node(&node.clone())); // TODO: perhaps figure out how to not clone() here
+            self.pos += 1;
+            out
+        } else {
+            None
+        }
+    }
+}
 impl Checker {
-    pub fn new(auto_decl: Option<Box<dyn FnMut(String) -> Result<Type, Diagnostic>>>) -> Self {
+    pub fn new(auto_decl: Option<Box<dyn FnMut(String) -> Result<Type, Diagnostic>>>, nodes: Vec<ASTNode>) -> Self {
         Self {
             declared_vars: HashMap::new(),
             auto_decl,
             generated_decls: Vec::new(),
+            diag_queue: VecDeque::new(),
+            pos: 0,
+            nodes,
         }
     }
     pub fn check_all(&mut self, nodes: Vec<ASTNode>) -> Result<(), Diagnostic> {
@@ -59,7 +80,7 @@ impl Checker {
         }
         Ok(())
     }
-    fn expect_type(&self, e: &Expr, ty: Vec<Type>) -> Result<Type, Diagnostic> {
+    fn expect_type(&mut self, e: &Expr, ty: Vec<Type>) -> Result<Type, Diagnostic> {
         let t = self.infer_type(e)?;
         if !ty.contains(&t) {
             Err(Diagnostic {
@@ -77,7 +98,7 @@ impl Checker {
             Ok(t)
         }
     }
-    pub fn infer_type(&self, e: &Expr) -> Result<Type, Diagnostic> {
+    pub fn infer_type(&mut self, e: &Expr) -> Result<Type, Diagnostic> {
         match &e.ty {
             ExprType::Atom(atom) => match atom.ty() {
                 Some(v) => Ok(v),
@@ -86,16 +107,8 @@ impl Checker {
                         if let Some((t, _)) = self.declared_vars.get(a) {
                             Ok(t.to_owned())
                         } else {
-                            Err(Diagnostic {
-                                ty: DiagType::Err(
-                                    ErrType::UndeclaredVariable {
-                                        ident: a.to_owned(),
-                                    },
-                                    Stage::Checker,
-                                ),
-                                info: undeclared_variable_info(a.to_owned(), None),
-                                span: Some(SpanType::Syntax(e.span.clone())),
-                            })
+                            let t = self.handle_undeclared(a.to_owned(), e.span.clone(), None)?;
+                            Ok(t)
                         }
                     }
                     _ => unreachable!(),
@@ -374,12 +387,13 @@ impl Checker {
         ident: String,
         span: Span,
         ty: Option<Type>,
-    ) -> Result<(), Diagnostic> {
+    ) -> Result<Type, Diagnostic> {
         if let Some(ref mut for_decl) = self.auto_decl {
             let t = for_decl(ident.clone())?;
             self.generated_decls.push((ident.to_owned(), t));
-            self.declared_vars.insert(ident.clone(), (t, VarType::Variable));
-            return Ok(());
+            self.declared_vars
+                .insert(ident.clone(), (t, VarType::Variable));
+            return Ok(t);
         }
         return Err(Diagnostic {
             ty: DiagType::Err(
@@ -392,7 +406,14 @@ impl Checker {
             span: Some(SpanType::Syntax(span.clone())),
         });
     }
-    pub fn check_node(&mut self, node: &ASTNode) -> Result<(), Diagnostic> {
+    fn check_block(&mut self, block: Vec<ASTNode>) {
+        for node in block {
+            if let Err(e) = self.check_node(&node) {
+                self.diag_queue.push_back(e)
+            }
+        }
+    }
+    fn check_node(&mut self, node: &ASTNode) -> Result<(), Diagnostic> {
         match node.ty {
             ASTNodeType::Declare { ref ident, ty } => {
                 if self.declared_vars.contains_key(ident) {
@@ -415,8 +436,12 @@ impl Checker {
                 ref ident,
                 ref value,
             } => {
+                let inferred = self.infer_type(value)?;
                 let ty = match self.declared_vars.get(&ident.0) {
-                    None => return self.handle_undeclared(ident.0.clone(), ident.1.clone(), Some(self.infer_type(value)?)),
+                    None => {
+                        self.handle_undeclared(ident.0.clone(), ident.1.clone(), Some(inferred))?;
+                        return Ok(());
+                    }
                     Some((v, t)) => match t {
                         VarType::Const => {
                             return Err(Diagnostic {
@@ -440,8 +465,16 @@ impl Checker {
                 self.infer_type(e)?;
                 Ok(())
             }
-            ASTNodeType::If { ref condition, .. } => {
+            ASTNodeType::If {
+                ref condition,
+                ref if_block,
+                ref else_block,
+            } => {
                 self.expect_type(condition, vec![Type::Bool])?;
+                self.check_block(if_block.0.clone());
+                if let Some(block) = else_block {
+                    self.check_block(block.0.clone());
+                }
                 Ok(())
             }
             ASTNodeType::Input {
@@ -465,7 +498,8 @@ impl Checker {
                         });
                     }
                 } else {
-                    return self.handle_undeclared(ident.0.clone(), ident.1.clone(), None);
+                    self.handle_undeclared(ident.0.clone(), ident.1.clone(), None)?;
+                    return Ok(());
                 }
                 Ok(())
             }
