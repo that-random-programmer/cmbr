@@ -11,19 +11,17 @@ pub enum VarType {
     Const,
     Variable,
 }
+pub type DeclFunc = dyn FnMut(String) -> Result<Type, Box<Diagnostic>>;
 pub struct Checker {
     declared_vars: HashMap<String, (Type, VarType)>,
-    auto_decl: Option<Box<dyn FnMut(String) -> Result<Type, Diagnostic>>>,
+    auto_decl: Option<Box<DeclFunc>>,
     pub generated_decls: Vec<(String, Type)>,
-    diag_queue: VecDeque<Diagnostic>,
+    diag_queue: VecDeque<Box<Diagnostic>>,
     pos: usize,
     nodes: Vec<ASTNode>
 }
 
-pub struct DeclResolution {
-    ty: Type,
-    name: String,
-}
+
 fn type_error(expected: Vec<Type>, got: Type, span: Span) -> Diagnostic {
     type_error_info(expected, got, span, vec![])
 }
@@ -48,7 +46,7 @@ pub fn undeclared_variable_info(name: String, ty: Option<Type>) -> Vec<Info> {
     ]
 }
 impl Iterator for &mut Checker {
-    type Item = Result<(), Diagnostic>;
+    type Item = Result<(), Box<Diagnostic>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(d) = self.diag_queue.pop_front() {
@@ -64,7 +62,7 @@ impl Iterator for &mut Checker {
     }
 }
 impl Checker {
-    pub fn new(auto_decl: Option<Box<dyn FnMut(String) -> Result<Type, Diagnostic>>>, nodes: Vec<ASTNode>) -> Self {
+    pub fn new(auto_decl: Option<Box<DeclFunc>>, nodes: Vec<ASTNode>) -> Self {
         Self {
             declared_vars: HashMap::new(),
             auto_decl,
@@ -74,16 +72,16 @@ impl Checker {
             nodes,
         }
     }
-    pub fn check_all(&mut self, nodes: Vec<ASTNode>) -> Result<(), Diagnostic> {
+    pub fn check_all(&mut self, nodes: Vec<ASTNode>) -> Result<(), Box<Diagnostic>> {
         for node in nodes {
             self.check_node(&node)?;
         }
         Ok(())
     }
-    fn expect_type(&mut self, e: &Expr, ty: Vec<Type>) -> Result<Type, Diagnostic> {
+    fn expect_type(&mut self, e: &Expr, ty: Vec<Type>) -> Result<Type, Box<Diagnostic>> {
         let t = self.infer_type(e)?;
         if !ty.contains(&t) {
-            Err(Diagnostic {
+            Err(Box::new(Diagnostic {
                 ty: DiagType::Err(
                     ErrType::TypeError {
                         expected: ty,
@@ -93,12 +91,12 @@ impl Checker {
                 ),
                 info: vec![],
                 span: Some(SpanType::Syntax(e.span.clone())),
-            })
+            }))
         } else {
             Ok(t)
         }
     }
-    pub fn infer_type(&mut self, e: &Expr) -> Result<Type, Diagnostic> {
+    pub fn infer_type(&mut self, e: &Expr) -> Result<Type, Box<Diagnostic>> {
         match &e.ty {
             ExprType::Atom(atom) => match atom.ty() {
                 Some(v) => Ok(v),
@@ -137,133 +135,133 @@ impl Checker {
                         Type::Int => match expr1_t {
                             Type::Int => Ok(Type::Int),
                             Type::Real => Ok(Type::Real),
-                            t => Err(type_error(
+                            t => Err(Box::new(type_error(
                                 vec![Type::Int, Type::Real],
                                 t,
                                 expr1.span.clone(),
-                            )),
+                            ))),
                         },
                         Type::Real => match expr1_t {
                             Type::Int | Type::Real => Ok(Type::Real),
-                            t => Err(type_error(
+                            t => Err(Box::new(type_error(
                                 vec![Type::Real, Type::Int],
                                 t,
                                 expr1.span.clone(),
-                            )),
+                            ))),
                         },
-                        t => Err(type_error(
+                        t => Err(Box::new(type_error(
                             vec![Type::Int, Type::Real],
                             t,
                             expr.span.clone(),
-                        )),
+                        ))),
                     },
                     BinOpType::Subtract => match expr_t {
                         Type::Int => match expr1_t {
                             Type::Int => Ok(Type::Int),
                             Type::Real => Ok(Type::Real),
-                            t => Err(type_error(
+                            t => Err(Box::new(type_error(
                                 vec![Type::Int, Type::Real],
                                 t,
                                 expr1.span.clone(),
-                            )),
+                            ))),
                         },
                         Type::Real => match expr1_t {
                             Type::Int | Type::Real => Ok(Type::Real),
-                            t => Err(type_error(
+                            t => Err(Box::new(type_error(
                                 vec![Type::Real, Type::Int],
                                 t,
                                 expr1.span.clone(),
-                            )),
+                            ))),
                         },
-                        t => Err(type_error(
+                        t => Err(Box::new(type_error(
                             vec![Type::Int, Type::Real],
                             t,
                             expr.span.clone(),
-                        )),
+                        ))),
                     },
                     BinOpType::Multiply => match expr_t {
                         Type::Int => match expr1_t {
                             Type::Int => Ok(Type::Int),
                             Type::Real => Ok(Type::Real),
-                            t => Err(type_error(
+                            t => Err(Box::new(type_error(
                                 vec![Type::Int, Type::Real],
                                 t,
                                 expr1.span.clone(),
-                            )),
+                            ))),
                         },
                         Type::Real => match expr1_t {
                             Type::Int | Type::Real => Ok(Type::Real),
-                            t => Err(type_error(
+                            t => Err(Box::new(type_error(
                                 vec![Type::Real, Type::Int],
                                 t,
                                 expr1.span.clone(),
-                            )),
+                            ))),
                         },
-                        t => Err(type_error(
+                        t => Err(Box::new(type_error(
                             vec![Type::Int, Type::Real],
                             t,
                             expr.span.clone(),
-                        )),
+                        ))),
                     },
                     BinOpType::Divide => match expr_t {
                         Type::Int => match expr1_t {
                             Type::Int | Type::Real => Ok(Type::Real),
-                            t => Err(type_error(
+                            t => Err(Box::new(type_error(
                                 vec![Type::Int, Type::Real],
                                 t,
                                 expr1.span.clone(),
-                            )),
+                            ))),
                         },
                         Type::Real => match expr1_t {
                             Type::Int | Type::Real => Ok(Type::Real),
-                            t => Err(type_error(
+                            t => Err(Box::new(type_error(
                                 vec![Type::Real, Type::Int],
                                 t,
                                 expr1.span.clone(),
-                            )),
+                            ))),
                         },
-                        t => Err(type_error(
+                        t => Err(Box::new(type_error(
                             vec![Type::Int, Type::Real],
                             t,
                             expr.span.clone(),
-                        )),
+                        ))),
                     },
                     BinOpType::Modulo => match expr_t {
                         Type::Int => match expr1_t {
                             Type::Int | Type::Real => Ok(Type::Real),
-                            t => Err(type_error(
+                            t => Err(Box::new(type_error(
                                 vec![Type::Int, Type::Int],
                                 t,
                                 expr1.span.clone(),
-                            )),
+                            ))),
                         },
                         Type::Real => match expr1_t {
                             Type::Int | Type::Real => Ok(Type::Int),
-                            t => Err(type_error(
+                            t => Err(Box::new(type_error(
                                 vec![Type::Real, Type::Int],
                                 t,
                                 expr1.span.clone(),
-                            )),
+                            ))),
                         },
-                        t => Err(type_error(
+                        t => Err(Box::new(type_error(
                             vec![Type::Int, Type::Real],
                             t,
                             expr.span.clone(),
-                        )),
+                        ))),
                     },
                     BinOpType::LogicalOr => match expr_t {
                         Type::Bool => match expr1_t {
                             Type::Bool => Ok(Type::Bool),
-                            t => Err(type_error(vec![Type::Bool], t, expr1.span.clone())),
+                            t => Err(Box::new(type_error(vec![Type::Bool], t, expr1.span.clone()))),
                         },
-                        t => Err(type_error(vec![Type::Bool], t, expr.span.clone())),
+                        t => Err(Box::new(type_error(vec![Type::Bool], t, expr.span.clone()))),
                     },
                     BinOpType::LogicalAnd => match expr_t {
                         Type::Bool => match expr1_t {
                             Type::Bool => Ok(Type::Bool),
-                            t => Err(type_error(vec![Type::Bool], t, expr1.span.clone())),
+                            t => Err(Box::new(type_error(vec![Type::Bool], t, expr1.span.clone()))),
                         },
-                        t => Err(type_error(vec![Type::Bool], t, expr.span.clone())),
+                        t => Err(Box::new(type_error(vec![Type::Bool], t, expr.span.clone()))),
                     },
                     BinOpType::Equality => {
                         if expr_t == expr1_t
@@ -274,14 +272,14 @@ impl Checker {
                         {
                             Ok(Type::Bool)
                         } else {
-                            Err(type_error_info(
+                            Err(Box::new(type_error_info(
                                 vec![expr_t],
                                 expr1_t,
                                 e.span.clone(),
                                 vec![Info::note(
                                     "both sides must be the same type, or both sides must be a number type.",
                                 )],
-                            ))
+                            )))
                         }
                     }
                     BinOpType::InEquality => {
@@ -293,90 +291,90 @@ impl Checker {
                         {
                             Ok(Type::Bool)
                         } else {
-                            Err(type_error_info(
+                            Err(Box::new(type_error_info(
                                 vec![expr_t],
                                 expr1_t,
                                 e.span.clone(),
                                 vec![Info::note(
                                     "both sides must be the same type, or both sides must be a number type.",
                                 )],
-                            ))
+                            )))
                         }
                     }
                     BinOpType::LT => match expr_t {
                         Type::Int | Type::Real => match expr1_t {
                             Type::Int | Type::Real => Ok(Type::Bool),
-                            t => Err(type_error(
+                            t => Err(Box::new(type_error(
                                 vec![Type::Int, Type::Real],
                                 t,
                                 expr1.span.clone(),
-                            )),
+                            ))),
                         },
-                        t => Err(type_error(
+                        t => Err(Box::new(type_error(
                             vec![Type::Int, Type::Real],
                             t,
                             expr.span.clone(),
-                        )),
+                        ))),
                     },
                     BinOpType::LTE => match expr_t {
                         Type::Int | Type::Real => match expr1_t {
                             Type::Int | Type::Real => Ok(Type::Bool),
-                            t => Err(type_error(
+                            t => Err(Box::new(type_error(
                                 vec![Type::Int, Type::Real],
                                 t,
                                 expr1.span.clone(),
-                            )),
+                            ))),
                         },
-                        t => Err(type_error(
+                        t => Err(Box::new(type_error(
                             vec![Type::Int, Type::Real],
                             t,
                             expr.span.clone(),
-                        )),
+                        ))),
                     },
                     BinOpType::GT => match expr_t {
                         Type::Int | Type::Real => match expr1_t {
                             Type::Int | Type::Real => Ok(Type::Bool),
-                            t => Err(type_error(
+                            t => Err(Box::new(type_error(
                                 vec![Type::Int, Type::Real],
                                 t,
                                 expr1.span.clone(),
-                            )),
+                            ))),
                         },
-                        t => Err(type_error(
+                        t => Err(Box::new(type_error(
                             vec![Type::Int, Type::Real],
                             t,
                             expr.span.clone(),
-                        )),
+                        ))),
                     },
                     BinOpType::GTE => match expr_t {
                         Type::Int | Type::Real => match expr1_t {
                             Type::Int | Type::Real => Ok(Type::Bool),
-                            t => Err(type_error(
+                            t => Err(Box::new(type_error(
                                 vec![Type::Int, Type::Real],
                                 t,
                                 expr1.span.clone(),
-                            )),
+                            ))),
                         },
-                        t => Err(type_error(
+                        t => Err(Box::new(type_error(
                             vec![Type::Int, Type::Real],
                             t,
                             expr.span.clone(),
-                        )),
+                        ))),
                     },
                     BinOpType::IntegerDivide => match expr_t {
                         Type::Int | Type::Real => match expr1_t {
                             Type::Int | Type::Real => Ok(Type::Int),
-                            t => Err(type_error(
+                            t => Err(Box::new(type_error(
                                 vec![Type::Int, Type::Real],
                                 t,
                                 expr1.span.clone(),
-                            )),
+                            ))),
                         },
-                        t => Err(type_error(
+                        t => Err(Box::new(type_error(
                             vec![Type::Int, Type::Real],
                             t,
                             expr.span.clone(),
-                        )),
+                        ))),
                     },
                 }
             }
@@ -387,7 +385,7 @@ impl Checker {
         ident: String,
         span: Span,
         ty: Option<Type>,
-    ) -> Result<Type, Diagnostic> {
+    ) -> Result<Type, Box<Diagnostic>> {
         if let Some(ref mut for_decl) = self.auto_decl {
             let t = for_decl(ident.clone())?;
             self.generated_decls.push((ident.to_owned(), t));
@@ -395,7 +393,7 @@ impl Checker {
                 .insert(ident.clone(), (t, VarType::Variable));
             return Ok(t);
         }
-        return Err(Diagnostic {
+        Err(Box::new(Diagnostic {
             ty: DiagType::Err(
                 ErrType::UndeclaredVariable {
                     ident: ident.clone(),
@@ -404,7 +402,7 @@ impl Checker {
             ),
             info: undeclared_variable_info(ident.clone(), ty),
             span: Some(SpanType::Syntax(span.clone())),
-        });
+        }))
     }
     fn check_block(&mut self, block: Vec<ASTNode>) {
         for node in block {
@@ -413,11 +411,11 @@ impl Checker {
             }
         }
     }
-    fn check_node(&mut self, node: &ASTNode) -> Result<(), Diagnostic> {
+    fn check_node(&mut self, node: &ASTNode) -> Result<(), Box<Diagnostic>> {
         match node.ty {
             ASTNodeType::Declare { ref ident, ty } => {
                 if self.declared_vars.contains_key(ident) {
-                    return Err(Diagnostic {
+                    return Err(Box::new(Diagnostic {
                         ty: DiagType::Err(
                             ErrType::DuplicateDeclare {
                                 ident: ident.to_owned(),
@@ -426,7 +424,7 @@ impl Checker {
                         ),
                         info: vec![Info::help("you declared this variable twice")],
                         span: Some(node.span.clone()),
-                    });
+                    }));
                 }
                 self.declared_vars
                     .insert(ident.to_owned(), (ty, VarType::Variable));
@@ -444,7 +442,7 @@ impl Checker {
                     }
                     Some((v, t)) => match t {
                         VarType::Const => {
-                            return Err(Diagnostic {
+                            return Err(Box::new(Diagnostic {
                                 ty: DiagType::Err(
                                     ErrType::AttemptedModifyingConst {
                                         ident: ident.0.to_owned(),
@@ -453,7 +451,7 @@ impl Checker {
                                 ),
                                 info: vec![Info::note("you cannot modify constants")],
                                 span: Some(node.span.clone()),
-                            });
+                            }));
                         }
                         VarType::Variable => v,
                     },
@@ -486,7 +484,7 @@ impl Checker {
                 }
                 if let Some(v) = self.declared_vars.get(&ident.0) {
                     if v.1 == VarType::Const {
-                        return Err(Diagnostic {
+                        return Err(Box::new(Diagnostic {
                             ty: DiagType::Err(
                                 ErrType::AttemptedModifyingConst {
                                     ident: ident.0.clone(),
@@ -495,7 +493,7 @@ impl Checker {
                             ),
                             info: vec![Info::note("you cannot INPUT a value into a constant")],
                             span: Some(SpanType::Syntax(ident.1.clone())),
-                        });
+                        }));
                     }
                 } else {
                     self.handle_undeclared(ident.0.clone(), ident.1.clone(), None)?;
@@ -517,7 +515,7 @@ impl Checker {
                 for ((atom, span), _) in cases {
                     let got = atom.ty().expect("got non static atom in CASE");
                     if !t.contains(&got) {
-                        return Err(Diagnostic {
+                        return Err(Box::new(Diagnostic {
                             ty: DiagType::Err(
                                 ErrType::TypeError { expected: t, got },
                                 Stage::Checker,
@@ -527,7 +525,7 @@ impl Checker {
                                 value, ty
                             ))],
                             span: Some(SpanType::Syntax(span.clone())),
-                        });
+                        }));
                     }
                 }
                 Ok(())
@@ -538,7 +536,7 @@ impl Checker {
             } => {
                 let t = value.0.ty().expect("constant with non-static value");
                 if self.declared_vars.contains_key(&ident.0) {
-                    return Err(Diagnostic {
+                    return Err(Box::new(Diagnostic {
                         ty: DiagType::Err(
                             ErrType::DuplicateDeclare {
                                 ident: ident.0.to_owned(),
@@ -547,7 +545,7 @@ impl Checker {
                         ),
                         info: vec![],
                         span: Some(node.span.clone()),
-                    });
+                    }));
                 }
                 self.declared_vars
                     .insert(ident.0.clone(), (t, VarType::Const));

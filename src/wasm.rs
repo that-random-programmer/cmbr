@@ -48,7 +48,7 @@ fn work(source: &str, io: WasmIO) {
         match node {
             Ok(n) => nodes.push(n),
             Err(e) => {
-                diag_printer.print_diagnostic(&e);
+                diag_printer.print_diagnostic(&*e);
                 if e.is_critical() {
                     return;
                 }
@@ -60,7 +60,7 @@ fn work(source: &str, io: WasmIO) {
     let mut failed = false;
     for node in &mut checker {
         if let Err(e) = node {
-            diag_printer.print_diagnostic(&e);
+            diag_printer.print_diagnostic(&*e);
             if e.is_critical() {
                 failed = true
             }
@@ -75,10 +75,7 @@ fn work(source: &str, io: WasmIO) {
 
     let mut treewalker = Treewalker::new(&nodes, io);
     if let Err(e) = treewalker.run() {
-        diag_printer.print_diagnostic(&e);
-        if e.is_critical() {
-            return;
-        }
+        diag_printer.print_diagnostic(&*e);
     };
 }
 
@@ -97,15 +94,15 @@ impl InterpreterIO for WasmIO {
             .unwrap();
     }
 
-    fn read_line(&self, span: SpanType) -> Result<String, RuntimeError> {
+    fn read_line(&self, span: SpanType) -> Result<String, Box<RuntimeError>> {
         match self.read_line_hook.call0(&JsValue::NULL) {
             Ok(v) => Ok(v.as_string().unwrap()),
-            Err(e) => Err(RuntimeError {
+            Err(e) => Err(Box::new(RuntimeError {
                 msg: format!("internal error: {e:?}"),
                 span,
                 ty: RuntimeErrorType::InternalError,
                 info: vec![Info::note("please report this error")],
-            }),
+            })),
         }
     }
 }

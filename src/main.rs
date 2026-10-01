@@ -1,6 +1,6 @@
 use clap::Parser as ClapParser;
 use cmbr::{
-    checker::Checker,
+    checker::{Checker, DeclFunc},
     parser::{ASTNode, ASTNodeType, Parser, SpanType},
     tokenizer::Tokenizer,
     treewalker::{Treewalker, Type},
@@ -21,12 +21,12 @@ fn main() {
         Ok(mut f) => match f.read_to_string(&mut buf) {
             Ok(v) => v,
             Err(e) => {
-                eprintln!("{}{}", "error".red().bold(), format!(": {}", e.bold()));
+                eprintln!("{}: {}", "error".red().bold(), e.bold());
                 exit(1)
             }
         },
         Err(e) => {
-            eprintln!("{}{}", "error".red().bold(), format!(": {}", e.bold()));
+            eprintln!("{}: {}", "error".red().bold(), e.bold());
             exit(1);
         }
     };
@@ -44,7 +44,7 @@ fn main() {
                 }
             }
             Err(e) => {
-                diag_printer.print_diagnostic(&e);
+                diag_printer.print_diagnostic(&*e);
                 if e.is_critical() {
                     exit(1)
                 }
@@ -59,16 +59,15 @@ fn main() {
         match node {
             Ok(n) => ast.push(n),
             Err(e) => {
-                diag_printer.print_diagnostic(&e);
+                diag_printer.print_diagnostic(&*e);
                 if e.is_critical() {
                     exit(1)
                 }
             }
         }
     }
-    let f: Option<Box<dyn FnMut(String) -> Result<cmbr::treewalker::Type, Diagnostic>>>;
-    if cli.interactive {
-        f = Some(Box::new(|v| {
+    let f: Option<Box<DeclFunc>> = if cli.interactive {
+        Some(Box::new(|v| {
             let prompt = format!("select a type for variable {v}");
             let c = Select::new(
                 &prompt,
@@ -76,7 +75,7 @@ fn main() {
             );
             match c.prompt() {
                 Ok(v) => Ok(v),
-                Err(e) => Err(Diagnostic {
+                Err(e) => Err(Box::new(Diagnostic {
                     ty: DiagType::Err(
                         ErrType::Other {
                             msg: format!("error while asking type for {v}: {e}"),
@@ -87,19 +86,19 @@ fn main() {
                         "there is nothing wrong with your program. Instead, there is something wrong with your environment",
                     )],
                     span: None,
-                }),
+                })),
             }
-        }));
+        }))
     } else {
-        f = None
-    }
+        None
+    };
 
     let mut checker = Checker::new(f, ast.clone());
     let mut failed = false;
 
     for node in &mut checker {
         if let Err(e) = node {
-            diag_printer.print_diagnostic(&e);
+            diag_printer.print_diagnostic(&*e);
             if e.is_critical() {
                 failed = true;
             }
@@ -125,7 +124,7 @@ fn main() {
         let mut file = match File::create(cli.path) {
             Ok(v) => v,
             Err(e) => {
-                eprintln!("{}{}", "error".red().bold(), format!(": {}", e.bold()));
+                eprintln!("{}: {}", "error".red().bold(), e.bold());
                 exit(1);
             }
         };
@@ -136,14 +135,14 @@ fn main() {
             content.insert(0, f)
         }
         if let Err(e) = writeln!(file, "{}", content.join("\n")) {
-            eprintln!("{}{}", "error".red().bold(), format!(": {}", e.bold()));
+            eprintln!("{}: {}", "error".red().bold(), e.bold());
             exit(1);
         };
     }
     println!("{}", "---- running ----".bright_black());
     let mut walker = Treewalker::new(&ast, CLIInterpreterIO);
     if let Err(e) = walker.run() {
-        diag_printer.print_diagnostic(&e);
+        diag_printer.print_diagnostic(&*e);
         exit(1)
     };
 }

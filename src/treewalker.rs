@@ -57,9 +57,7 @@ pub struct Variable {
     value: Option<Value>,
 }
 pub struct Constant {
-    name: (String, Span),
     value: (Atom, Span),
-    ty: Type,
 }
 pub struct Treewalker<I: InterpreterIO> {
     nodes: Vec<ASTNode>,
@@ -124,13 +122,13 @@ impl AsValue for NotNan<f64> {
 
 // TODO: rest of the AsValue impls
 
-fn var_not_decl_err(name: &str, span: SpanType) -> RuntimeError {
-    RuntimeError {
+fn var_not_decl_err(name: &str, span: SpanType) -> Box<RuntimeError> {
+    Box::new(RuntimeError {
         msg: format!("cannot find variable {name}"),
         span,
         ty: RuntimeErrorType::ReferenceError,
         info: undeclared_variable_info(name.to_owned(), None),
-    }
+    })
 }
 // note that these conversion funcs aren't complete, except for to_str()
 fn to_str(val: Value) -> String {
@@ -142,78 +140,78 @@ fn to_str(val: Value) -> String {
         Value::Nothing => "<nothing>".to_string(), // TODO: perhaps consider removing the Nothing type
     }
 }
-fn to_int(val: Value, span: SpanType) -> Result<i32, RuntimeError> {
+fn to_int(val: Value, span: SpanType) -> Result<i32, Box<RuntimeError>> {
     match val {
         Value::String(s) => match s.parse() {
             Ok(v) => Ok(v),
-            Err(_) => Err(RuntimeError {
+            Err(_) => Err(Box::new(RuntimeError {
                 msg: format!("invalid `STRING` to convert to `INTEGER`: {s}"),
                 span,
                 ty: RuntimeErrorType::TypeError,
                 info: vec![],
-            }),
+            })),
         },
         Value::Int(i) => Ok(i),
-        t => Err(RuntimeError {
+        t => Err(Box::new(RuntimeError {
             msg: format!("cannot convert a(n) {} to an `INTEGER`", t.ty()),
             span,
             ty: RuntimeErrorType::TypeError,
             info: vec![],
-        }),
+        })),
     }
 }
-fn to_bool(val: Value, span: SpanType) -> Result<bool, RuntimeError> {
+fn to_bool(val: Value, span: SpanType) -> Result<bool, Box<RuntimeError>> {
     match val {
         Value::String(s) => Ok(matches!(s.to_lowercase().as_str(), "true" | "yes")),
         Value::Bool(v) => Ok(v),
-        t => Err(RuntimeError {
+        t => Err(Box::new(RuntimeError {
             msg: format!("cannot convert a(n) {} to a `BOOLEAN`", t.ty()),
             span,
             ty: RuntimeErrorType::TypeError,
             info: vec![],
-        }),
+        })),
     }
 }
 
-fn to_real(val: Value, span: SpanType) -> Result<NotNan<f64>, RuntimeError> {
+fn to_real(val: Value, span: SpanType) -> Result<NotNan<f64>, Box<RuntimeError>> {
     match val {
         Value::String(s) => match s.parse() {
             Ok(v) => Ok(v),
-            Err(_) => Err(RuntimeError {
+            Err(_) => Err(Box::new(RuntimeError {
                 msg: format!("invalid `STRING` to convert to `REAL`: {s}"),
                 span,
                 ty: RuntimeErrorType::TypeError,
                 info: vec![],
-            }),
+            })),
         },
         Value::Real(i) => Ok(i),
         Value::Int(i) => Ok(NotNan::new(i as f64).expect("ICE: float is NaN")),
-        t => Err(RuntimeError {
+        t => Err(Box::new(RuntimeError {
             msg: format!("cannot convert a(n) {} to a `REAL`", t.ty()),
             span,
             ty: RuntimeErrorType::TypeError,
             info: vec![],
-        }),
+        })),
     }
 }
 
-fn op_type_err(op: &str, t1: Type, t2: Type, span: SpanType) -> RuntimeError {
-    RuntimeError {
+fn op_type_err(op: &str, t1: Type, t2: Type, span: SpanType) -> Box<RuntimeError> {
+    Box::new(RuntimeError {
         msg: format!("cannot {op} a(n) {t1} and a(n) {t2}"),
         span,
         ty: RuntimeErrorType::TypeError,
         info: vec![],
-    }
+    })
 }
-fn as_str(value: Value, span: SpanType) -> Result<String, RuntimeError> {
+fn as_str(value: Value, span: SpanType) -> Result<String, Box<RuntimeError>> {
     match value {
         Value::String(v) => Ok(v),
-        t => Err(RuntimeError {
+        t => Err(Box::new(RuntimeError {
             msg: format!("expected type STRING, got type {}", t.ty()),
             span,
             ty: RuntimeErrorType::TypeError,
             info: vec![],
-        }),
+        })),
     }
 }
 fn example_type(ty: &Type) -> &str {
@@ -226,17 +224,17 @@ fn example_type(ty: &Type) -> &str {
     }
 }
 
-fn divide(node: Value, operand: Value, span: SpanType) -> Result<Value, RuntimeError> {
+fn divide(node: Value, operand: Value, span: SpanType) -> Result<Value, Box<RuntimeError>> {
     match node {
         Value::Int(i1) => match operand {
             Value::Int(i2) => {
                 if i2 == 0 {
-                    Err(RuntimeError {
+                    Err(Box::new(RuntimeError {
                         msg: String::from("cannot divide by 0"),
                         span,
                         ty: RuntimeErrorType::DivideByZeroError,
                         info: vec![],
-                    })
+                    }))
                 } else {
                     Ok(Value::Real(
                         NotNan::new(i1 as f64 / i2 as f64).expect("ICE: float is NaN"),
@@ -245,12 +243,12 @@ fn divide(node: Value, operand: Value, span: SpanType) -> Result<Value, RuntimeE
             }
             Value::Real(r2) => {
                 if r2 == 0.0 {
-                    Err(RuntimeError {
+                    Err(Box::new(RuntimeError {
                         msg: String::from("cannot divide by 0"),
                         span,
                         ty: RuntimeErrorType::DivideByZeroError,
                         info: vec![],
-                    })
+                    }))
                 } else {
                     Ok(Value::Real(
                         NotNan::new(i1 as f64 / *r2).expect("ICE: float is NaN"),
@@ -269,14 +267,14 @@ fn divide(node: Value, operand: Value, span: SpanType) -> Result<Value, RuntimeE
         _ => Err(op_type_err("divide", node.ty(), operand.ty(), span)),
     }
 }
-fn eq(node: &Value, operand: &Value) -> Result<bool, RuntimeError> {
+fn eq(node: &Value, operand: &Value) -> bool {
     match (node.clone(), operand.clone()) {
-        (Value::Int(i), Value::Real(r)) | (Value::Real(r), Value::Int(i)) => Ok(i as f64 == *r),
-        _ => Ok(node == operand),
+        (Value::Int(i), Value::Real(r)) | (Value::Real(r), Value::Int(i)) => i as f64 == *r,
+        _ => node == operand,
     }
 }
 impl<I: InterpreterIO> Treewalker<I> {
-    pub fn run(&mut self) -> Result<(), RuntimeError> {
+    pub fn run(&mut self) -> Result<(), Box<RuntimeError>> {
         for node in self.nodes.clone() {
             // TODO: perhaps figure out how to not clone all the nodes
             self.exec_node(node)?;
@@ -292,7 +290,7 @@ impl<I: InterpreterIO> Treewalker<I> {
         }
     }
 
-    fn set_var(&mut self, name: &str, val: Value, span: SpanType) -> Result<(), RuntimeError> {
+    fn set_var(&mut self, name: &str, val: Value, span: SpanType) -> Result<(), Box<RuntimeError>> {
         let var = match self.variables.get_mut(name) {
             None => {
                 return Err(var_not_decl_err(name, span));
@@ -300,7 +298,7 @@ impl<I: InterpreterIO> Treewalker<I> {
             Some(v) => v,
         };
         if var.declared_ty != val.ty() {
-            return Err(RuntimeError {
+            return Err(Box::new(RuntimeError {
                 msg: format!(
                     "variable {name} declared as {}, but attempted to be set as {}",
                     var.declared_ty,
@@ -312,12 +310,12 @@ impl<I: InterpreterIO> Treewalker<I> {
                     "try changing the declared type to `{}`",
                     val.ty()
                 ))],
-            });
+            }));
         }
         var.value = Some(val);
         Ok(())
     }
-    fn var_ty(&self, name: &str, span: SpanType) -> Result<Type, RuntimeError> {
+    fn var_ty(&self, name: &str, span: SpanType) -> Result<Type, Box<RuntimeError>> {
         match self.variables.get(name) {
             Some(v) => Ok(v.declared_ty),
             None => Err(var_not_decl_err(name, span)),
@@ -335,11 +333,11 @@ impl<I: InterpreterIO> Treewalker<I> {
     //     }
     //     Ok(v)
     // }
-    fn var_value(&self, name: &str, span: SpanType) -> Result<&Value, RuntimeError> {
+    fn var_value(&self, name: &str, span: SpanType) -> Result<&Value, Box<RuntimeError>> {
         match self.variables.get(name) {
             Some(v) => match &v.value {
                 Some(value) => Ok(value),
-                None => Err(RuntimeError {
+                None => Err(Box::new(RuntimeError {
                     msg: format!("variable {name} has not been set yet"),
                     span,
                     ty: RuntimeErrorType::ReferenceError,
@@ -347,12 +345,12 @@ impl<I: InterpreterIO> Treewalker<I> {
                         "did you set the variable with (note that `{0}` is an example)\n    {name} <- {0}\nor did you input it with\n    INPUT {name}, \"optional prompt\"",
                         example_type(&v.declared_ty),
                     ))],
-                }),
+                })),
             },
             None => Err(var_not_decl_err(name, span)),
         }
     }
-    fn exec_node(&mut self, astnode: ASTNode) -> Result<Value, RuntimeError> {
+    fn exec_node(&mut self, astnode: ASTNode) -> Result<Value, Box<RuntimeError>> {
         match astnode.ty {
             ASTNodeType::If {
                 condition,
@@ -365,12 +363,12 @@ impl<I: InterpreterIO> Treewalker<I> {
                 })? {
                     Value::Bool(b) => b,
                     t => {
-                        return Err(RuntimeError {
+                        return Err(Box::new(RuntimeError {
                             msg: format!("expected a BOOLEAN, got a `{}`", t.ty()),
                             span: SpanType::Syntax(condition.span),
                             ty: RuntimeErrorType::TypeError,
                             info: vec![],
-                        });
+                        }));
                     }
                 };
                 if condition {
@@ -396,7 +394,7 @@ impl<I: InterpreterIO> Treewalker<I> {
                         })?,
                         SpanType::Syntax(v.span),
                     )?,
-                    None => format!("input> "),
+                    None => String::from("input> "),
                 };
                 self.io.print(&p);
                 std::io::stdout().flush().unwrap();
@@ -419,7 +417,7 @@ impl<I: InterpreterIO> Treewalker<I> {
 
                 self.set_var(&ident, out, span)?;
 
-                return Ok(Value::Nothing);
+                Ok(Value::Nothing)
             }
             ASTNodeType::Expr(expr) => match expr.ty {
                 ExprType::Atom(atom) => match atom {
@@ -642,28 +640,28 @@ impl<I: InterpreterIO> Treewalker<I> {
                             Value::Int(i1) => match operand {
                                 Value::Int(i2) => {
                                     if i2 == 0 {
-                                        Err(RuntimeError {
+                                        Err(Box::new(RuntimeError {
                                             msg: String::from("cannot modulo by 0"),
                                             span: astnode.span,
                                             ty: RuntimeErrorType::DivideByZeroError,
                                             info: vec![Info::note(
                                                 "modulo gives the remainder of division, so you cannot modulo by 0",
                                             )],
-                                        })
+                                        }))
                                     } else {
                                         Ok(Value::Int(i1 % i2))
                                     }
                                 }
                                 Value::Real(r2) => {
                                     if r2 == 0.0 {
-                                        Err(RuntimeError {
+                                        Err(Box::new(RuntimeError {
                                             msg: String::from("cannot modulo by 0"),
                                             span: astnode.span,
                                             ty: RuntimeErrorType::DivideByZeroError,
                                             info: vec![Info::note(
                                                 "modulo gives the remainder of division, so you cannot modulo by 0",
                                             )],
-                                        })
+                                        }))
                                     } else {
                                         Ok(Value::Real(
                                             NotNan::new(i1 as f64 % *r2)
@@ -727,8 +725,8 @@ impl<I: InterpreterIO> Treewalker<I> {
                                 astnode.span,
                             )),
                         },
-                        BinOpType::Equality => Ok(Value::Bool(eq(&node, &operand)?)),
-                        BinOpType::InEquality => Ok(Value::Bool(!eq(&node, &operand)?)),
+                        BinOpType::Equality => Ok(Value::Bool(eq(&node, &operand))),
+                        BinOpType::InEquality => Ok(Value::Bool(!eq(&node, &operand))),
                     }
                 }
                 ExprType::UnaryOp(op, node) => {
@@ -786,7 +784,7 @@ impl<I: InterpreterIO> Treewalker<I> {
                         }),
                         span: SpanType::Syntax(case.1),
                     })?;
-                    if eq(&value, &case)? {
+                    if eq(&value, &case) {
                         ran = true;
                         for stmnt in stmnts {
                             self.exec_node(stmnt)?;
@@ -818,9 +816,7 @@ impl<I: InterpreterIO> Treewalker<I> {
                 self.constants.insert(
                     ident.clone().0,
                     Constant {
-                        name: ident,
-                        ty: value.0.ty().expect("ICE: got constant with IDENTIFIER"), // .unwrap() is safe to use, as the parser calls static_atom()
-                        value: value,
+                        value,
                     },
                 );
                 Ok(Value::Nothing)

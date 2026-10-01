@@ -1,4 +1,4 @@
-use std::{cell::LazyCell, collections::HashMap, fmt::Display, rc::Rc};
+use std::{cell::LazyCell, collections::{HashMap, VecDeque}, fmt::Display, rc::Rc};
 
 use heck::{ToPascalCase, ToUpperCamelCase};
 use ordered_float::NotNan;
@@ -207,15 +207,15 @@ pub struct Tokenizer {
     current_char: Option<char>,
     previous_span: Option<Span>,
     content: String,
-    diag_queue: Vec<Diagnostic>,
+    diag_queue: VecDeque<Box<Diagnostic>>,
     warned_vars: Vec<String>,
 }
 
 impl Iterator for Tokenizer {
-    type Item = Result<Option<Token>, Diagnostic>;
+    type Item = Result<Option<Token>, Box<Diagnostic>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(diag) = self.diag_queue.pop() {
+        if let Some(diag) = self.diag_queue.pop_front() {
             return Some(Err(diag));
         }
         while let Some(c) = self.current_char
@@ -224,9 +224,7 @@ impl Iterator for Tokenizer {
         {
             self.advance();
         }
-        if self.current_char.is_none() {
-            return None;
-        }
+        self.current_char?;
         Some(self.next_token())
     }
 }
@@ -240,13 +238,13 @@ impl Tokenizer {
         }
         self.advance();
     }
-    pub fn next_token(&mut self) -> Result<Option<Token>, Diagnostic> {
+    pub fn next_token(&mut self) -> Result<Option<Token>, Box<Diagnostic>> {
         let c = self.expect_char()?;
         let start = self.current_span.clone();
         if c == '"' {
-            return self.tokenize_string().map(|i| Some(i));
+            return self.tokenize_string().map(Some);
         } else if c.is_numeric() {
-            return self.tokenize_numeric().map(|n| Some(n));
+            return self.tokenize_numeric().map(Some);
         } else if c == '/' && self.peek(1) == Some('/') {
             let span = self.current_span.clone();
             self.skip_line();
@@ -260,7 +258,7 @@ impl Tokenizer {
                 token: TokenType::Newline,
                 span: self.prev_span(),
             }));
-        } else if MAP_DOUBLE.with(|m| self.peek(1).map_or(false, |v| m.contains_key(&(c, v)))) {
+        } else if MAP_DOUBLE.with(|m| self.peek(1).is_some_and(|v| m.contains_key(&(c, v)))) {
             let token = MAP_DOUBLE.with(|m| m[&(c, self.peek(1).unwrap())].clone());
             self.advance_multiple(2);
             return Ok(Some(Token {
@@ -402,9 +400,9 @@ impl Tokenizer {
                 span: start.merge(self.prev_span()),
             }));
         } else if c.is_alphabetic() {
-            return self.tokenize_ident().map(|i| Some(i));
+            return self.tokenize_ident().map(Some);
         }
-        return Err(Diagnostic {
+        Err(Box::new(Diagnostic {
             ty: DiagType::Err(
                 ErrType::InvalidChar {
                     char: self.current_char,
@@ -415,10 +413,10 @@ impl Tokenizer {
                 "this character is never used in cambridge pseudocode",
             )],
             span: Some(SpanType::Syntax(self.current_span.clone())),
-        });
+        }))
     }
 
-    fn tokenize_numeric(&mut self) -> Result<Token, Diagnostic> {
+    fn tokenize_numeric(&mut self) -> Result<Token, Box<Diagnostic>> {
         let start = self.current_span.clone();
         let mut out = String::new();
         let mut real = false;
@@ -455,7 +453,7 @@ impl Tokenizer {
             })
         }
     }
-    fn tokenize_ident(&mut self) -> Result<Token, Diagnostic> {
+    fn tokenize_ident(&mut self) -> Result<Token, Box<Diagnostic>> {
         let mut out = String::new();
         let start = self.current_span.clone();
         while let Some(c) = self.current_char
@@ -466,16 +464,16 @@ impl Tokenizer {
         }
         if out.len() == 1 && !self.warned_vars.contains(&out) {
             self.warned_vars.push(out.clone());
-            self.diag_queue.push(Diagnostic {
+            self.diag_queue.push_back(Box::new(Diagnostic {
                 ty: DiagType::Warn(WarnType::AmbiguousVariableName),
                 info: vec![Info::note(
                     "variable names should be descriptive, like: Name, DistanceRan, etc.",
                 )],
                 span: Some(SpanType::Syntax(start.merge(self.prev_span()))),
-            })
+            }))
         } else if out != out.to_pascal_case() && !self.warned_vars.contains(&out) {
             self.warned_vars.push(out.clone());
-            self.diag_queue.push(Diagnostic {
+            self.diag_queue.push_back(Box::new(Diagnostic {
                 ty: DiagType::Warn(WarnType::UnconventionalVariableName),
                 info: vec![
                     Info::note("variable names should use UpperCamelCase"),
@@ -485,14 +483,14 @@ impl Tokenizer {
                     )),
                 ],
                 span: Some(SpanType::Syntax(start.merge(self.prev_span()))),
-            })
+            }))
         }
-        return Ok(Token {
+        Ok(Token {
             span: start.merge(self.prev_span()),
             token: TokenType::Ident(out),
-        });
+        })
     }
-    fn tokenize_string(&mut self) -> Result<Token, Diagnostic> {
+    fn tokenize_string(&mut self) -> Result<Token, Box<Diagnostic>> {
         let start = self.current_span.clone();
         self.advance();
         let mut out = String::new();
@@ -508,16 +506,16 @@ impl Tokenizer {
             self.advance();
         }
         if !broken {
-            return Err(Diagnostic {
+            return Err(Box::new(Diagnostic {
                 ty: DiagType::Err(ErrType::UnterminatedStringLiteral, Stage::Tokenizer),
                 info: vec![Info::note("you never ended the string")],
                 span: Some(SpanType::Syntax(start.merge(self.prev_span()))),
-            });
+            }));
         }
-        return Ok(Token {
+        Ok(Token {
             span: start.merge(self.prev_span()),
             token: TokenType::StringLiteral(out),
-        });
+        })
     }
     fn prev_span(&self) -> Span {
         match &self.previous_span {
@@ -546,14 +544,14 @@ impl Tokenizer {
     }
 }
 impl Tokenizer {
-    fn eof(&self) -> Diagnostic {
-        Diagnostic {
+    fn eof(&self) -> Box<Diagnostic> {
+        Box::new(Diagnostic {
             ty: DiagType::Err(ErrType::UnexpectedEOF, Stage::Tokenizer),
             info: vec![Info::note("EOF stands for End Of File")],
             span: Some(SpanType::Syntax(self.current_span.clone())),
-        }
+        })
     }
-    fn expect_char(&self) -> Result<char, Diagnostic> {
+    fn expect_char(&self) -> Result<char, Box<Diagnostic>> {
         if let Some(c) = self.current_char {
             Ok(c)
         } else {
@@ -574,7 +572,7 @@ impl Tokenizer {
                 fp: fp.into(),
             },
             previous_span: None,
-            diag_queue: Vec::new(),
+            diag_queue: VecDeque::new(),
             warned_vars: Vec::new(),
         }
     }

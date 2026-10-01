@@ -3,7 +3,9 @@ use std::{fmt::Display, rc::Rc};
 use owo_colors::{AnsiColors, OwoColorize};
 
 use crate::{
-    parser::SpanType, tokenizer::{TokenKind, TokenType}, treewalker::{RuntimeError, RuntimeErrorType, Type},
+    parser::SpanType,
+    tokenizer::{TokenKind, TokenType},
+    treewalker::{RuntimeError, RuntimeErrorType, Type},
 };
 #[derive(Debug, Clone)]
 pub struct Span {
@@ -36,18 +38,20 @@ impl InterpreterIO for CLIInterpreterIO {
         print!("{s}");
     }
 
-    fn read_line(&self, span: SpanType) -> Result<String, RuntimeError> {
+    fn read_line(&self, span: SpanType) -> Result<String, Box<RuntimeError>> {
         let mut buf = String::new();
         match std::io::stdin().read_line(&mut buf) {
             Ok(_) => Ok(buf),
-            Err(e) => Err(RuntimeError {
-                msg: format!("failed to read from stdin: {e}"),
-                span: span,
-                ty: RuntimeErrorType::IOError,
-                info: vec![Info::note(
-                    "this error is not caused by something wrong with your program",
-                )],
-            }),
+            Err(e) => {
+                Err(Box::new(RuntimeError {
+                    msg: format!("failed to read from stdin: {e}"),
+                    span,
+                    ty: RuntimeErrorType::IOError,
+                    info: vec![Info::note(
+                        "this error is not caused by something wrong with your program",
+                    )],
+                }))
+            }
         }
     }
 }
@@ -61,9 +65,9 @@ impl<I: InterpreterIO> DiagnosticPrinter<I> {
         };
 
         self.io.println(&format!(
-            "{}{}",
+            "{}: {}",
             diag.ty().to_string().color(color).bold(),
-            format!(": {}", diag.msg().bold())
+            diag.msg().bold()
         ));
 
         if let Some(SpanType::Syntax(span)) = &diag.span() {
@@ -169,9 +173,9 @@ impl<I: InterpreterIO> DiagnosticPrinter<I> {
         }
         for info in diag.info() {
             self.io.println(&format!(
-                "{}{}",
+                "{}: {}",
                 info.ty.bold().blue(),
-                format!(": {}", info.msg.replace("\n", "\n      "))
+                info.msg.replace("\n", "\n      ")
             ));
         }
         self.io.println("")
@@ -250,8 +254,8 @@ pub enum ErrType {
         ident: String,
     },
     Other {
-        msg: String
-    }
+        msg: String,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -309,7 +313,7 @@ impl Display for ErrType {
                     write!(f, "unexpected type {got}")
                 } else if expected.len() == 1 {
                     write!(f, "expected type {}, got {got}", expected[0])
-                }else if expected.len() == 2 {
+                } else if expected.len() == 2 {
                     write!(
                         f,
                         "expected type {} or {}, got {got}",
@@ -325,8 +329,8 @@ impl Display for ErrType {
             }
             ErrType::AttemptedModifyingConst { ident } => {
                 write!(f, "attempted to modify constant {ident}")
-            },
-            ErrType::Other { msg } => write!(f, "{msg}")
+            }
+            ErrType::Other { msg } => write!(f, "{msg}"),
         }
     }
 }
@@ -340,7 +344,7 @@ impl Display for DiagType {
 }
 
 pub trait InterpreterIO {
-    fn read_line(&self, span: SpanType) -> Result<String, RuntimeError>;
+    fn read_line(&self, span: SpanType) -> Result<String, Box<RuntimeError>>;
     fn println(&self, s: &str) {
         self.print(&format!("{s}\n"));
     }

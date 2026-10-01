@@ -1,4 +1,4 @@
-use std::{fmt::Display, rc::Rc};
+use std::{collections::VecDeque, fmt::Display, rc::Rc};
 
 use crate::{
     tokenizer::{Token, TokenKind, TokenType},
@@ -15,7 +15,7 @@ pub struct Parser {
     previous_span: Span,
     pos: usize,
     fp: Rc<str>,
-    warn_queue: Vec<Diagnostic>,
+    warn_queue: VecDeque<Box<Diagnostic>>,
     failed: bool,
 }
 
@@ -112,7 +112,7 @@ impl TryFrom<&TokenType> for BinOpType {
 }
 
 impl TryFrom<&TokenType> for UnaryOpType {
-    type Error = Diagnostic;
+    type Error = Box<Diagnostic>;
 
     fn try_from(value: &TokenType) -> Result<Self, Self::Error> {
         type U = UnaryOpType;
@@ -236,31 +236,6 @@ fn infix_binding_power(op: BinOpType) -> (u8, u8) {
     }
 }
 
-#[cfg(test)]
-mod test {
-    use crate::tokenizer::Tokenizer;
-
-    use super::*;
-    fn parse(expr: impl Into<String>) -> Result<Expr, Diagnostic> {
-        let content = expr.into();
-        let tk = Tokenizer::new(content, Rc::from("<TODO>"));
-        let mut tkns = Vec::new();
-        for tkn in tk {
-            if let Some(v) = tkn.unwrap() {
-                tkns.push(v)
-            }
-        }
-        Parser::new(tkns, "<TODO>").expr()
-    }
-    #[test]
-    fn expr() {
-        assert_eq!(
-            parse("5 + 2 * 6 / 6").unwrap().to_string().as_str(),
-            "(5 + ((2 * 6) / 6))"
-        )
-    }
-}
-
 const STATIC_ATOM: [TokenKind; 5] = [
     TokenKind::Int,
     TokenKind::Real,
@@ -277,19 +252,17 @@ const ATOM: [TokenKind; 6] = [
     TokenKind::Ident,
 ];
 impl Iterator for Parser {
-    type Item = Result<ASTNode, Diagnostic>;
+    type Item = Result<ASTNode, Box<Diagnostic>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(diagnostic) = self.warn_queue.pop() {
+        if let Some(diagnostic) = self.warn_queue.pop_front() {
             return Some(Err(diagnostic));
         }
         if self.failed {
             return None;
         }
         self.skip_newline();
-        if self.current.is_none() {
-            return None;
-        }
+        self.current.as_ref()?;
         let out = self.stmnt();
         if out.is_err() {
             self.failed = true
@@ -319,7 +292,7 @@ impl Parser {
         }
     }
 
-    fn parse_if(&mut self, inner: bool) -> Result<ASTNode, Diagnostic> {
+    fn parse_if(&mut self, inner: bool) -> Result<ASTNode, Box<Diagnostic>> {
         let start = self.span.clone();
         self.advance();
         let condition = self.expr()?;
@@ -356,7 +329,6 @@ impl Parser {
         }
         if !inner {
             self.eat(&TokenKind::Endif)?;
-            self.newline(start.merge(self.previous_span.clone()))?;
         }
         Ok(ASTNode {
             ty: ASTNodeType::If {
@@ -375,21 +347,19 @@ impl Parser {
             i += 1;
         }
         match self.peek_amnt(i) {
-            None => return false,
-            Some(v) => {
-                if STATIC_ATOM.contains(&v.token.kind()) {
-                    i += 1;
-                    match self.peek_amnt(i) {
-                        None => return false,
-                        Some(v) => return v.token == TokenType::Colon,
-                    }
-                } else {
-                    return false;
+            None => false,
+            Some(v) if STATIC_ATOM.contains(&v.token.kind()) => {
+                i += 1;
+                match self.peek_amnt(i) {
+                    None => false,
+                    Some(v) => v.token == TokenType::Colon,
                 }
             }
+            _ => false,
         }
     }
-    pub fn stmnt(&mut self) -> Result<ASTNode, Diagnostic> {
+
+    pub fn stmnt(&mut self) -> Result<ASTNode, Box<Diagnostic>> {
         self.skip_newline();
         let start = self.span.clone();
         match self.expect_token()?.token {
@@ -424,7 +394,7 @@ impl Parser {
                 let s = start.merge(self.previous_span.clone());
                 self.newline(s.clone())?;
                 if let Some(ref p) = prompt {
-                    self.warn_queue.push(Diagnostic {
+                    self.warn_queue.push_back(Box::new(Diagnostic {
                         ty: DiagType::Warn(WarnType::InputWithPrompt),
                         info: vec![
                             Info::note(
@@ -436,12 +406,12 @@ impl Parser {
                             )),
                         ],
                         span: Some(SpanType::Syntax(start.merge(s.clone()))),
-                    })
+                    }))
                 }
-                return Ok(ASTNode {
+                Ok(ASTNode {
                     ty: ASTNodeType::Input { ident, prompt },
                     span: SpanType::Syntax(start.merge(s.clone())),
-                });
+                })
             }
             TokenType::Ident(ident_value)
                 if self
@@ -468,10 +438,10 @@ impl Parser {
                 }
                 let s = start.merge(self.previous_span.clone());
                 self.newline(s.clone())?;
-                return Ok(ASTNode {
+                Ok(ASTNode {
                     ty: ASTNodeType::Output(out),
                     span: SpanType::Syntax(s),
-                });
+                })
             }
             TokenType::If => self.parse_if(false),
             TokenType::CaseOf => {
@@ -533,7 +503,7 @@ impl Parser {
                     TokenType::CharType => Type::Char,
                     TokenType::RealType => Type::Real,
                     tkn => {
-                        return Err(Diagnostic {
+                        return Err(Box::new(Diagnostic {
                             ty: DiagType::Err(
                                 ErrType::UnexpectedToken {
                                     tkn,
@@ -549,15 +519,15 @@ impl Parser {
                             ),
                             info: vec![Info::note("expected a type")],
                             span: Some(SpanType::Syntax(self.span.clone())),
-                        });
+                        }));
                     }
                 };
                 self.advance();
                 self.newline(start.merge(self.previous_span.clone()))?;
-                return Ok(ASTNode {
+                Ok(ASTNode {
                     ty: ASTNodeType::Declare { ident, ty },
                     span: SpanType::Syntax(start.merge(self.previous_span.clone())),
-                });
+                })
             }
             t => {
                 let mut info = vec![];
@@ -566,14 +536,14 @@ impl Parser {
                     for c in t.chars() {
                         if c.is_lowercase() {
                             upper = false;
-                            break
+                            break;
                         }
                     }
                     if !upper {
                         info.push(Info::help("did you mean to write a keyword? Remember that keywords are fully capital"))
                     }
                 }
-                Err(Diagnostic {
+                Err(Box::new(Diagnostic {
                     ty: DiagType::Err(
                         ErrType::UnexpectedToken {
                             tkn: t,
@@ -583,18 +553,18 @@ impl Parser {
                     ),
                     info,
                     span: Some(SpanType::Syntax(self.span.clone())),
-                })
+                }))
             }
         }
     }
-    fn static_atom_info(&mut self, info: &[Info]) -> Result<Atom, Diagnostic> {
+    fn static_atom_info(&mut self, info: &[Info]) -> Result<Atom, Box<Diagnostic>> {
         match self.expect_token()?.token {
             TokenType::Int(v) => Ok(Atom::Int(v)),
             TokenType::Real(v) => Ok(Atom::Real(*v)),
             TokenType::StringLiteral(v) => Ok(Atom::String(v.clone())),
             TokenType::False => Ok(Atom::Boolean(false)),
             TokenType::True => Ok(Atom::Boolean(true)),
-            t => Err(Diagnostic {
+            t => Err(Box::new(Diagnostic {
                 ty: DiagType::Err(
                     ErrType::UnexpectedToken {
                         tkn: t,
@@ -604,17 +574,17 @@ impl Parser {
                 ),
                 info: info.to_vec(),
                 span: Some(SpanType::Syntax(self.span.clone())),
-            }),
+            })),
         }
     }
-    fn static_atom(&mut self) -> Result<Atom, Diagnostic> {
+    fn static_atom(&mut self) -> Result<Atom, Box<Diagnostic>> {
         self.static_atom_info(&[])
     }
-    pub fn expr(&mut self) -> Result<Expr, Diagnostic> {
+    pub fn expr(&mut self) -> Result<Expr, Box<Diagnostic>> {
         self.expr_r(0)
     }
 
-    pub fn expr_r(&mut self, min_p: u8) -> Result<Expr, Diagnostic> {
+    pub fn expr_r(&mut self, min_p: u8) -> Result<Expr, Box<Diagnostic>> {
         let mut lhs;
         let start = self.span.clone();
         match self.static_atom() {
@@ -655,7 +625,7 @@ impl Parser {
                         let mut expected = ATOM.to_vec();
                         expected.push(TokenKind::LParen);
 
-                        return Err(Diagnostic {
+                        return Err(Box::new(Diagnostic {
                             ty: DiagType::Err(
                                 ErrType::UnexpectedToken {
                                     tkn,
@@ -665,7 +635,7 @@ impl Parser {
                             ),
                             info: vec![],
                             span: Some(SpanType::Syntax(self.span.clone())),
-                        });
+                        }));
                     }
                 }
             }
@@ -707,21 +677,19 @@ impl Parser {
     //         }),
     //     }
     // }
-    fn newline(&mut self, span: Span) -> Result<(), Diagnostic> {
+    fn newline(&mut self, span: Span) -> Result<(), Box<Diagnostic>> {
         match &self.current {
-            None => return Ok(()),
+            None => Ok(()),
             Some(v) => match &v.token {
                 TokenType::Newline => {
                     self.advance();
-                    return Ok(());
+                    Ok(())
                 }
-                _ => {
-                    return Err(Diagnostic {
-                        ty: DiagType::Err(ErrType::ExpectedNewline, Stage::Parser),
-                        info: vec![Info::help("consider adding a newline after this statement")],
-                        span: Some(SpanType::Syntax(span)),
-                    });
-                }
+                _ => Err(Box::new(Diagnostic {
+                    ty: DiagType::Err(ErrType::ExpectedNewline, Stage::Parser),
+                    info: vec![Info::help("consider adding a newline after this statement")],
+                    span: Some(SpanType::Syntax(span)),
+                })),
             },
         }
     }
@@ -736,14 +704,14 @@ impl Parser {
             .map_or_else(|| Span::empty(self.fp.clone()), |t| t.span.clone());
         self.current.clone()
     }
-    fn eat(&mut self, ty: &TokenKind) -> Result<Token, Diagnostic> {
+    fn eat(&mut self, ty: &TokenKind) -> Result<Token, Box<Diagnostic>> {
         self.eat_info(ty, &[])
     }
-    fn eat_info(&mut self, ty: &TokenKind, info: &[Info]) -> Result<Token, Diagnostic> {
+    fn eat_info(&mut self, ty: &TokenKind, info: &[Info]) -> Result<Token, Box<Diagnostic>> {
         let current = self.expect_token()?;
         if current.token.kind() == *ty {
             self.advance();
-            return Ok(current);
+            Ok(current)
         } else {
             let mut i = info.to_vec();
             if let Some(ref v) = self.current
@@ -753,7 +721,7 @@ impl Parser {
                 i.push(to_push);
             }
 
-            return Err(Diagnostic {
+            Err(Box::new(Diagnostic {
                 ty: DiagType::Err(
                     ErrType::UnexpectedToken {
                         tkn: current.token,
@@ -763,13 +731,13 @@ impl Parser {
                 ),
                 info: i,
                 span: Some(SpanType::Syntax(self.span.clone())),
-            });
+            }))
         }
     }
-    pub fn expect_token(&self) -> Result<Token, Diagnostic> {
+    pub fn expect_token(&self) -> Result<Token, Box<Diagnostic>> {
         match &self.current {
             Some(v) => Ok(v.clone()),
-            None => Err(Diagnostic {
+            None => Err(Box::new(Diagnostic {
                 ty: DiagType::Err(ErrType::UnexpectedEOF, Stage::Parser),
                 info: vec![Info::note("EOF stands for End Of File")],
                 span: Some(SpanType::Syntax(
@@ -777,25 +745,50 @@ impl Parser {
                         .last()
                         .map_or(Span::empty(self.fp.clone()), |i| Span::eof(i.span.clone())),
                 )),
-            }),
+            })),
         }
     }
     pub fn new(tkns: impl Into<Vec<Token>>, fp: impl Into<Rc<str>>) -> Self {
         let tkns = tkns.into();
         let fp = fp.into();
         Self {
-            current: tkns.get(0).cloned(),
+            current: tkns.first().cloned(),
             fp: fp.clone(),
             span: tkns
-                .get(0)
+                .first()
                 .map(|t| t.span.clone())
                 .unwrap_or_else(|| Span::empty(fp.clone())),
-            tkns: tkns,
+            tkns,
             previous: None,
             pos: 0,
             previous_span: Span::empty(fp),
-            warn_queue: Vec::new(),
+            warn_queue: VecDeque::new(),
             failed: false,
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::tokenizer::Tokenizer;
+
+    use super::*;
+    fn parse(expr: impl Into<String>) -> Result<Expr, Box<Diagnostic>> {
+        let content = expr.into();
+        let tk = Tokenizer::new(content, Rc::from("<TODO>"));
+        let mut tkns = Vec::new();
+        for tkn in tk {
+            if let Some(v) = tkn.unwrap() {
+                tkns.push(v)
+            }
+        }
+        Parser::new(tkns, "<TODO>").expr()
+    }
+    #[test]
+    fn expr() {
+        assert_eq!(
+            parse("5 + 2 * 6 / 6").unwrap().to_string().as_str(),
+            "(5 + ((2 * 6) / 6))"
+        )
     }
 }
