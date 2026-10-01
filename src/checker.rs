@@ -512,7 +512,7 @@ impl Checker {
                 } else {
                     vec![ty]
                 };
-                for ((atom, span), _) in cases {
+                for ((atom, span), body) in cases {
                     let got = atom.ty().expect("got non static atom in CASE");
                     if !t.contains(&got) {
                         return Err(Box::new(Diagnostic {
@@ -527,6 +527,7 @@ impl Checker {
                             span: Some(SpanType::Syntax(span.clone())),
                         }));
                     }
+                    self.check_block(body.to_vec());
                 }
                 Ok(())
             }
