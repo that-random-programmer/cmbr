@@ -416,7 +416,7 @@ impl Parser {
             TokenType::Ident(ident_value)
                 if self
                     .peek_amnt(1)
-                    .is_some_and(|t| t.token == TokenType::ArrowRL) =>
+                    .is_some_and(|t| matches!(t.token, TokenType::ArrowRL)) =>
             {
                 let ident = (ident_value, self.span.clone());
                 self.advance();
@@ -541,6 +541,9 @@ impl Parser {
                     }
                     if !upper {
                         info.push(Info::help("did you mean to write a keyword? Remember that keywords are fully capital"))
+                    }
+                    if let Some(v) = self.peek_amnt(1) && v.token == TokenType::Equals {
+                        info.push(Info::help("did you mean to assign a value to a variable? Cambridge pseudocode uses `<-` for assignment, not `=`"))
                     }
                 }
                 Err(Box::new(Diagnostic {
