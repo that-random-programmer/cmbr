@@ -256,7 +256,7 @@ mod test {
     fn expr() {
         assert_eq!(
             parse("5 + 2 * 6 / 6").unwrap().to_string().as_str(),
-            "(+ 5 (/ (* 2 6) 6))"
+            "(5 + ((2 * 6) / 6))"
         )
     }
 }
