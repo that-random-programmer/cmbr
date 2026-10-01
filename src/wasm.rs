@@ -56,10 +56,10 @@ fn work(source: &str, io: WasmIO) {
         }
     }
 
-    let mut checker = Checker::new(None);
+    let mut checker = Checker::new(None, nodes.clone());
     let mut failed = false;
-    for node in &nodes {
-        if let Err(e) = checker.check_node(node) {
+    for node in &mut checker {
+        if let Err(e) = node {
             diag_printer.print_diagnostic(&e);
             if e.is_critical() {
                 failed = true
