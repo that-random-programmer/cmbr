@@ -122,8 +122,11 @@
 	});
 </script>
 
+<div class="flex h-screen flex-col overflow-hidden">
 <div><button class="btn w-full" onclick={run}>run</button></div>
 <div class="flex h-full max-md:flex-col">
 	<div bind:this={editorEl} class="h-full w-full"></div>
 	<div bind:this={terminalEl} class="h-full w-full"></div>
+</div>
+
 </div>
