@@ -228,6 +228,12 @@ impl Span {
         }
     }
 }
+
+#[derive(Debug, Clone)]
+pub enum TypeErrorType {
+    Assignment(String),
+}
+
 #[derive(Debug, Clone)]
 pub enum ErrType {
     InvalidChar {
@@ -246,7 +252,12 @@ pub enum ErrType {
     UndeclaredVariable {
         ident: String,
     },
-    TypeError {
+    AssignmentTypeError {
+        ident: String,
+        expected: Type,
+        got: Type
+    },
+    UnexpectedType {
         expected: Vec<Type>,
         got: Type,
     },
@@ -308,7 +319,7 @@ impl Display for ErrType {
             ErrType::UndeclaredVariable { ident: name } => {
                 write!(f, "variable {name} never declared")
             }
-            ErrType::TypeError { expected, got } => {
+            ErrType::UnexpectedType { expected, got } => {
                 if expected.is_empty() {
                     write!(f, "unexpected type {got}")
                 } else if expected.len() == 1 {
@@ -331,6 +342,7 @@ impl Display for ErrType {
                 write!(f, "attempted to modify constant {ident}")
             }
             ErrType::Other { msg } => write!(f, "{msg}"),
+            ErrType::AssignmentTypeError { ident, expected, got } => write!(f, "attempted to assign {ident} as {got} when it has been declared as {expected}"),
         }
     }
 }

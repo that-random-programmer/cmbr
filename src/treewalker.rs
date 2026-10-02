@@ -453,6 +453,13 @@ impl<I: InterpreterIO> Treewalker<I> {
                                 Value::Int(v) => Ok(Value::Int(i1 + v)),
                                 _ => Err(op_type_err("add", node.ty(), operand.ty(), astnode.span)),
                             },
+                            Value::Real(r1) => match operand {
+                                Value::Real(r2) => Ok(Value::Real(r1 + r2)),
+                                Value::Int(i2) => Ok(Value::Real(
+                                    NotNan::new(r1 + i2 as f64).expect("ICE: float is NaN"),
+                                )),
+                            _ => Err(op_type_err("add", node.ty(), operand.ty(), astnode.span)),
+                            },
                             _ => Err(op_type_err("add", node.ty(), operand.ty(), astnode.span)),
                         },
                         BinOpType::Subtract => match node {
@@ -813,12 +820,7 @@ impl<I: InterpreterIO> Treewalker<I> {
                 Ok(Value::Nothing)
             }
             ASTNodeType::Constant { ident, value } => {
-                self.constants.insert(
-                    ident.clone().0,
-                    Constant {
-                        value,
-                    },
-                );
+                self.constants.insert(ident.clone().0, Constant { value });
                 Ok(Value::Nothing)
             }
         }

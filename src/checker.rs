@@ -18,16 +18,15 @@ pub struct Checker {
     pub generated_decls: Vec<(String, Type)>,
     diag_queue: VecDeque<Box<Diagnostic>>,
     pos: usize,
-    nodes: Vec<ASTNode>
+    nodes: Vec<ASTNode>,
 }
-
 
 fn type_error(expected: Vec<Type>, got: Type, span: Span) -> Diagnostic {
     type_error_info(expected, got, span, vec![])
 }
 fn type_error_info(expected: Vec<Type>, got: Type, span: Span, info: Vec<Info>) -> Diagnostic {
     Diagnostic {
-        ty: DiagType::Err(ErrType::TypeError { expected, got }, Stage::Checker),
+        ty: DiagType::Err(ErrType::UnexpectedType { expected, got }, Stage::Checker),
         info,
         span: Some(SpanType::Syntax(span)),
     }
@@ -50,7 +49,7 @@ impl Iterator for &mut Checker {
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(d) = self.diag_queue.pop_front() {
-            return Some(Err(d))
+            return Some(Err(d));
         }
         if let Some(node) = self.nodes.get(self.pos) {
             let out = Some(self.check_node(&node.clone())); // TODO: perhaps figure out how to not clone() here
@@ -83,7 +82,7 @@ impl Checker {
         if !ty.contains(&t) {
             Err(Box::new(Diagnostic {
                 ty: DiagType::Err(
-                    ErrType::TypeError {
+                    ErrType::UnexpectedType {
                         expected: ty,
                         got: t,
                     },
@@ -252,14 +251,22 @@ impl Checker {
                     BinOpType::LogicalOr => match expr_t {
                         Type::Bool => match expr1_t {
                             Type::Bool => Ok(Type::Bool),
-                            t => Err(Box::new(type_error(vec![Type::Bool], t, expr1.span.clone()))),
+                            t => Err(Box::new(type_error(
+                                vec![Type::Bool],
+                                t,
+                                expr1.span.clone(),
+                            ))),
                         },
                         t => Err(Box::new(type_error(vec![Type::Bool], t, expr.span.clone()))),
                     },
                     BinOpType::LogicalAnd => match expr_t {
                         Type::Bool => match expr1_t {
                             Type::Bool => Ok(Type::Bool),
-                            t => Err(Box::new(type_error(vec![Type::Bool], t, expr1.span.clone()))),
+                            t => Err(Box::new(type_error(
+                                vec![Type::Bool],
+                                t,
+                                expr1.span.clone(),
+                            ))),
                         },
                         t => Err(Box::new(type_error(vec![Type::Bool], t, expr.span.clone()))),
                     },
@@ -435,7 +442,7 @@ impl Checker {
                 ref value,
             } => {
                 let inferred = self.infer_type(value)?;
-                let ty = match self.declared_vars.get(&ident.0) {
+                let ty = *match self.declared_vars.get(&ident.0) {
                     None => {
                         self.handle_undeclared(ident.0.clone(), ident.1.clone(), Some(inferred))?;
                         return Ok(());
@@ -456,8 +463,23 @@ impl Checker {
                         VarType::Variable => v,
                     },
                 };
-                self.expect_type(value, vec![*ty])?;
-                Ok(())
+                let got = self.infer_type(value)?;
+                if got != ty {
+                    Err(Box::new(Diagnostic {
+                        ty: DiagType::Err(
+                            ErrType::AssignmentTypeError {
+                                ident: ident.0.clone(),
+                                expected: ty,
+                                got,
+                            },
+                            Stage::Checker,
+                        ),
+                        info: vec![],
+                        span: Some(node.span.clone()),
+                    }))
+                } else {
+                    Ok(())
+                }
             }
             ASTNodeType::Expr(ref e) => {
                 self.infer_type(e)?;
@@ -517,7 +539,7 @@ impl Checker {
                     if !t.contains(&got) {
                         return Err(Box::new(Diagnostic {
                             ty: DiagType::Err(
-                                ErrType::TypeError { expected: t, got },
+                                ErrType::UnexpectedType { expected: t, got },
                                 Stage::Checker,
                             ),
                             info: vec![Info::help(format!(
